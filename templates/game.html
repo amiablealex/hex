@@ -68,7 +68,24 @@
             </button>
             <button class="btn" onclick="window.location.href='/'">New game</button>
             <button class="btn btn-danger" id="abandonBtn" onclick="confirmAbandon()">Abandon game</button>
+            <button class="btn" onclick="showRules(); closeMenu();">How to play</button>
             <button class="btn mt-8" onclick="closeMenu()">Close</button>
+        </div>
+    </div>
+
+    <!-- Rules overlay -->
+    <div class="rules-overlay hidden" id="rulesOverlay" onclick="closeRules()">
+        <div class="rules-card" onclick="event.stopPropagation()">
+            <h3>How to Play</h3>
+            <div class="rules-body">
+                <p><strong>Goal</strong> — be the first to reach the target score.</p>
+                <p><strong>Turns</strong> — each turn you get 3 tile stacks. Place all 3 on empty hexes, then your opponent goes.</p>
+                <p><strong>Merging</strong> — when you place a tile next to one with the same colour on top, they merge automatically. Only the top colour can merge — colours underneath are blocked until the top is moved away.</p>
+                <p><strong>Clearing</strong> — stack 10 of the same colour and they clear, scoring points for you.</p>
+                <p><strong>Fertile hexes</strong> — hexes with a golden border and <em>2×</em> mark double the points for any clear on them.</p>
+                <p><strong>Cascades</strong> — if a clear triggers another clear, the second scores 2×, the third 3×, and so on. Combine with fertile hexes for huge points.</p>
+            </div>
+            <button class="btn mt-8" onclick="closeRules()">Got it</button>
         </div>
     </div>
 
@@ -135,6 +152,14 @@
 
     function closeMenu() {
         document.getElementById('menuOverlay').classList.add('hidden');
+    }
+
+    function showRules() {
+        document.getElementById('rulesOverlay').classList.remove('hidden');
+    }
+
+    function closeRules() {
+        document.getElementById('rulesOverlay').classList.add('hidden');
     }
 
     function confirmAbandon() {
@@ -257,11 +282,28 @@
             if (gameState.last_move && gameState.last_move.hex === key) g.classList.add('last-move');
             if (highlightHex === key) g.classList.add('just-placed');
             if (selectedStack !== null && stack.length === 0 && isMyTurn()) g.classList.add('valid-target');
+            if (gameState.fertile_hexes && gameState.fertile_hexes.includes(key)) g.classList.add('fertile');
 
             const corners = hexCorners(cx, cy, HEX_SIZE - 2);
             const poly = document.createElementNS(SVG_NS, 'polygon');
             poly.setAttribute('points', corners.map(c => `${c.x},${c.y}`).join(' '));
             g.appendChild(poly);
+
+            // Fertile hex "2x" watermark (drawn behind tiles)
+            if (gameState.fertile_hexes && gameState.fertile_hexes.includes(key)) {
+                const watermark = document.createElementNS(SVG_NS, 'text');
+                watermark.setAttribute('x', cx);
+                watermark.setAttribute('y', cy + 1);
+                watermark.setAttribute('text-anchor', 'middle');
+                watermark.setAttribute('dominant-baseline', 'middle');
+                watermark.setAttribute('font-size', '16');
+                watermark.setAttribute('font-family', 'DM Mono, monospace');
+                watermark.setAttribute('font-weight', '700');
+                watermark.setAttribute('fill', 'rgba(74, 67, 64, 0.18)');
+                watermark.setAttribute('pointer-events', 'none');
+                watermark.textContent = '2×';
+                g.appendChild(watermark);
+            }
 
             if (stack.length > 0) {
                 const slabW = 28;
@@ -553,17 +595,17 @@
         return particles;
     }
 
-    function showPointsAtHex(svg, cx, cy, points, colour) {
+    function showPointsAtHex(svg, cx, cy, label, colour) {
         const text = document.createElementNS(SVG_NS, 'text');
         text.setAttribute('x', cx);
         text.setAttribute('y', cy);
         text.setAttribute('text-anchor', 'middle');
         text.setAttribute('dominant-baseline', 'middle');
-        text.setAttribute('font-size', '16');
+        text.setAttribute('font-size', '14');
         text.setAttribute('font-family', 'DM Mono, monospace');
         text.setAttribute('font-weight', '600');
         text.setAttribute('fill', colour);
-        text.textContent = `+${points}`;
+        text.textContent = label;
         svg.appendChild(text);
         text.animate([
             { transform: 'translateY(0)', opacity: 1 },
@@ -644,8 +686,15 @@
                 const pos = hexPositions[evt.hex];
                 if (pos) {
                     const colour = colours[evt.colour];
-                    allParticles.push(...spawnParticles(svg, pos.cx, pos.cy, colour, 12));
-                    allTexts.push(showPointsAtHex(svg, pos.cx, pos.cy, evt.count, colour));
+                    const particleCount = evt.fertile ? 18 : 12;
+                    allParticles.push(...spawnParticles(svg, pos.cx, pos.cy, colour, particleCount));
+
+                    // Build points label
+                    const pts = evt.points || evt.count;
+                    let label = `+${pts}`;
+                    if (evt.multiplier > 1) label += ` ×${evt.multiplier}`;
+                    if (evt.fertile) label += ' ★';
+                    allTexts.push(showPointsAtHex(svg, pos.cx, pos.cy, label, colour));
                 }
                 applyClearToBoard(gameState.board, evt);
             }

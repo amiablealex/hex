@@ -321,6 +321,23 @@ html, body {
     stroke-width: 2;
 }
 
+.hex-cell.fertile polygon {
+    stroke: var(--c3);
+    stroke-width: 2;
+    filter: drop-shadow(0 0 3px rgba(212, 184, 74, 0.35));
+}
+
+.hex-cell.fertile.has-tiles polygon {
+    stroke: var(--c3);
+    stroke-width: 1.5;
+}
+
+.hex-cell.fertile.valid-target polygon {
+    stroke: var(--c3);
+    stroke-width: 2;
+    stroke-dasharray: 4 2;
+}
+
 .hex-cell.just-placed polygon {
     stroke: var(--text);
     stroke-width: 2.5;
@@ -534,6 +551,63 @@ html, body {
     flex: 1;
     padding: 12px 16px;
     font-size: 0.85rem;
+}
+
+/* ---- Rules overlay ---- */
+
+.rules-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(74, 67, 64, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 250;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    padding: 16px;
+}
+
+.rules-card {
+    background: white;
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 24px;
+    max-width: 340px;
+    width: 100%;
+    box-shadow: var(--shadow-lg);
+    max-height: 80dvh;
+    overflow-y: auto;
+}
+
+.rules-card h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    text-align: center;
+    margin-bottom: 12px;
+}
+
+.rules-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.rules-body p {
+    font-size: 0.82rem;
+    line-height: 1.55;
+    color: var(--text);
+}
+
+.rules-body strong {
+    color: var(--text);
+    font-weight: 600;
+}
+
+.rules-body em {
+    color: var(--c3);
+    font-style: normal;
+    font-weight: 600;
 }
 
 /* ---- Game over ---- */

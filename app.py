@@ -28,9 +28,9 @@ RATE_LIMIT_WINDOW = 60  # seconds
 RATE_LIMIT_MAX_CREATES = 10  # max game creates per window
 
 BOARD_CONFIGS = {
-    "small": {"radius": 1, "hexes": 7, "colours": 3, "target_score": 30},
-    "medium": {"radius": 2, "hexes": 19, "colours": 4, "target_score": 60},
-    "large": {"radius": 3, "hexes": 37, "colours": 5, "target_score": 100},
+    "small": {"radius": 1, "hexes": 7, "colours": 3, "target_score": 60, "fertile": 1},
+    "medium": {"radius": 2, "hexes": 19, "colours": 4, "target_score": 120, "fertile": 2},
+    "large": {"radius": 3, "hexes": 37, "colours": 5, "target_score": 200, "fertile": 3},
 }
 
 COLOUR_PALETTE = ["#E07B5A", "#5AAFB8", "#C482D0", "#D4B84A", "#6B9FDE"]
@@ -100,6 +100,7 @@ def init_db():
             game_mode TEXT NOT NULL DEFAULT 'link',
             player1_token TEXT,
             player2_token TEXT,
+            fertile_hexes TEXT NOT NULL DEFAULT '[]',
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         )
@@ -436,6 +437,11 @@ def create_game():
     for q, r in coords:
         board[f"{q},{r}"] = []
 
+    # Select fertile hexes (random, excluding centre on small boards for fairness)
+    rng = random.Random(seed)
+    coord_keys = [f"{q},{r}" for q, r in coords]
+    fertile_hexes = rng.sample(coord_keys, min(config["fertile"], len(coord_keys)))
+
     stacks = generate_stacks(seed, 0, config["colours"])
     now = datetime.now(timezone.utc).isoformat()
 
@@ -446,13 +452,15 @@ def create_game():
     db.execute(
         """
         INSERT INTO games (id, board_size, board_state, offered_stacks, seed,
-                          game_mode, player1_token, placed_this_turn, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+                          game_mode, player1_token, fertile_hexes, placed_this_turn,
+                          created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
         """,
         (
             game_id, board_size, json.dumps(board), json.dumps(stacks), seed,
             game_mode,
             token if game_mode == "link" else None,
+            json.dumps(fertile_hexes),
             now, now,
         ),
     )
@@ -534,6 +542,7 @@ def get_game(game_id):
         "coords": hex_grid_coords(config["radius"]),
         "game_mode": game["game_mode"],
         "player_number": player_number,
+        "fertile_hexes": json.loads(game["fertile_hexes"]) if game["fertile_hexes"] else [],
     })
 
 
@@ -588,27 +597,50 @@ def make_move(game_id):
     offered[stack_index] = None
 
     board_after_place = copy.deepcopy(board)
+    fertile_hexes = json.loads(game["fertile_hexes"]) if game["fertile_hexes"] else []
+    fertile_set = set(fertile_hexes)
 
+    # Process merges → clears, with cascading multiplier
+    # Each successive clear round gets a higher multiplier: 1x, 2x, 3x, ...
     board, merge_events = process_merges(board, coords_set)
     board_after_merges = copy.deepcopy(board)
-    board, points, clear_events = process_clears(board)
 
-    if clear_events:
+    total_points = 0
+    all_clear_events = []
+    cascade_level = 0
+
+    # First round of clears
+    board, round_pts, round_clears = process_clears(board)
+    while round_clears:
+        cascade_level += 1
+        multiplier = cascade_level  # 1x first, 2x second, 3x third...
+
+        for evt in round_clears:
+            base_pts = evt["count"]
+            is_fertile = evt["hex"] in fertile_set
+            fertile_mult = 2 if is_fertile else 1
+            scored = base_pts * fertile_mult * multiplier
+            evt["points"] = scored
+            evt["multiplier"] = multiplier
+            evt["fertile"] = is_fertile
+            total_points += scored
+
+        all_clear_events.extend(round_clears)
+
+        # After clears, new merges may be possible → which may cause more clears
         board, extra_merges = process_merges(board, coords_set)
         merge_events.extend(extra_merges)
-        board, extra_points, extra_clears = process_clears(board)
-        points += extra_points
-        clear_events.extend(extra_clears)
+        board, round_pts, round_clears = process_clears(board)
 
     current_player = game["current_turn"]
     p1_score = game["player1_score"]
     p2_score = game["player2_score"]
 
-    if points > 0:
+    if total_points > 0:
         if current_player == 1:
-            p1_score += points
+            p1_score += total_points
         else:
-            p2_score += points
+            p2_score += total_points
 
     placed_this_turn = game["placed_this_turn"] + 1
 
@@ -641,7 +673,7 @@ def make_move(game_id):
         "stack": chosen_stack,
         "player": current_player,
         "merge_events": merge_events,
-        "clear_events": clear_events,
+        "clear_events": all_clear_events,
     }
 
     db.execute(
@@ -665,7 +697,7 @@ def make_move(game_id):
 
     return jsonify({
         "success": True,
-        "points_scored": points,
+        "points_scored": total_points,
         "board": board,
         "board_after_place": board_after_place,
         "board_after_merges": board_after_merges,
@@ -678,7 +710,7 @@ def make_move(game_id):
         "status": status,
         "last_move": last_move,
         "merge_events": merge_events,
-        "clear_events": clear_events,
+        "clear_events": all_clear_events,
     })
 
 
