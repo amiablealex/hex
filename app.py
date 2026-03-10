@@ -105,6 +105,20 @@ def generate_stacks(game_seed, move_count, num_colours):
     return stacks
 
 
+def _count_top(stack):
+    """Count consecutive same-colour layers from the top."""
+    if not stack:
+        return 0, -1
+    top = stack[-1]
+    count = 0
+    for layer in reversed(stack):
+        if layer == top:
+            count += 1
+        else:
+            break
+    return count, top
+
+
 def process_merges(board, coords_set):
     """
     Process auto-merging of adjacent same-colour tops.
@@ -112,8 +126,9 @@ def process_merges(board, coords_set):
     Rules:
     - Only the top colour of a stack can participate in merging.
     - All consecutive same-colour layers from the top transfer as a group.
-    - Smaller group merges INTO larger group. On tie, the source stays put.
+    - Smaller group merges INTO larger group. On tie, use coord key as tiebreak.
     - After a transfer exposes a new colour, chain reactions can occur.
+    - Scans all adjacent pairs each pass to handle bridge placements.
 
     Returns (board, merge_events).
     """
@@ -121,25 +136,17 @@ def process_merges(board, coords_set):
     changed = True
     while changed:
         changed = False
-        for coord_str in list(board.keys()):
+        # Find the best merge: scan all cells, find adjacent matching pairs
+        best = None  # (from_key, to_key, colour, count)
+
+        for coord_str in board:
             stack = board[coord_str]
-            if not stack:
-                continue
-            if coord_str not in coords_set:
+            if not stack or coord_str not in coords_set:
                 continue
 
+            our_count, top_colour = _count_top(stack)
             q, r = map(int, coord_str.split(","))
-            top_colour = stack[-1]
 
-            # Count our consecutive top layers
-            our_count = 0
-            for layer in reversed(stack):
-                if layer == top_colour:
-                    our_count += 1
-                else:
-                    break
-
-            # Find neighbours with matching top colour
             for nq, nr in hex_neighbours(q, r):
                 nkey = f"{nq},{nr}"
                 if nkey not in coords_set or nkey not in board or not board[nkey]:
@@ -148,29 +155,33 @@ def process_merges(board, coords_set):
                 if nstack[-1] != top_colour:
                     continue
 
-                # Count neighbour's consecutive top layers
-                their_count = 0
-                for layer in reversed(nstack):
-                    if layer == top_colour:
-                        their_count += 1
-                    else:
-                        break
+                their_count, _ = _count_top(nstack)
 
-                # Smaller merges into larger. On tie, lower coord key stays.
+                # Determine who moves into whom
+                # Smaller moves into larger; on tie, higher coord key moves into lower
                 if our_count < their_count or (our_count == their_count and coord_str > nkey):
-                    # We move into them
-                    transferred = stack[-our_count:]
-                    board[coord_str] = stack[:-our_count]
-                    board[nkey] = nstack + transferred
-                    merge_events.append({
-                        "from": coord_str, "to": nkey,
-                        "colour": top_colour, "count": our_count,
-                    })
-                    changed = True
-                    break
+                    from_key, to_key, count = coord_str, nkey, our_count
+                else:
+                    from_key, to_key, count = nkey, coord_str, their_count
 
-            if changed:
+                # Pick this merge (first found is fine — we restart after each)
+                best = (from_key, to_key, top_colour, count)
                 break
+
+            if best:
+                break
+
+        if best:
+            from_key, to_key, colour, count = best
+            from_stack = board[from_key]
+            transferred = from_stack[-count:]
+            board[from_key] = from_stack[:-count]
+            board[to_key] = board[to_key] + transferred
+            merge_events.append({
+                "from": from_key, "to": to_key,
+                "colour": colour, "count": count,
+            })
+            changed = True
 
     return board, merge_events
 

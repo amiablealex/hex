@@ -254,7 +254,8 @@
             div.classList.add('stack-option');
             if (selectedStack === idx) div.classList.add('selected');
 
-            for (let i = 0; i < stack.length; i++) {
+            // Render tiles top-to-bottom (last array element = top, shown first)
+            for (let i = stack.length - 1; i >= 0; i--) {
                 const tile = document.createElement('div');
                 tile.classList.add('stack-tile');
                 tile.style.backgroundColor = colours[stack[i]];
