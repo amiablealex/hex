@@ -484,8 +484,15 @@ def make_move(game_id):
     # Mark stack as used (None = placed)
     offered[stack_index] = None
 
+    # Snapshot board after placement, before merges (for client-side animation)
+    board_after_place = copy.deepcopy(board)
+
     # Process merges then clears, chain if needed
     board, merge_events = process_merges(board, coords_set)
+
+    # Snapshot after first merges, before clears
+    board_after_merges = copy.deepcopy(board)
+
     board, points, clear_events = process_clears(board)
 
     if clear_events:
@@ -567,6 +574,8 @@ def make_move(game_id):
         "success": True,
         "points_scored": points,
         "board": board,
+        "board_after_place": board_after_place,
+        "board_after_merges": board_after_merges,
         "current_turn": next_turn,
         "player1_score": p1_score,
         "player2_score": p2_score,

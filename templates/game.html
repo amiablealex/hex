@@ -530,24 +530,43 @@
         el.classList.add('bump');
     }
 
+    // ---- Apply a single merge event to a local board copy ----
+
+    function applyMergeToBoard(board, evt) {
+        const fromStack = board[evt.from] || [];
+        const toStack = board[evt.to] || [];
+        const transferred = fromStack.slice(-evt.count);
+        board[evt.from] = fromStack.slice(0, fromStack.length - evt.count);
+        board[evt.to] = toStack.concat(transferred);
+        return board;
+    }
+
+    function applyClearToBoard(board, evt) {
+        const stack = board[evt.hex] || [];
+        board[evt.hex] = stack.slice(0, stack.length - evt.count);
+        return board;
+    }
+
     async function animateMoveResult(data) {
         isAnimating = true;
         const colours = gameState.colours;
         const svg = document.getElementById('boardSvg');
 
-        // 1. Flash placed hex
+        // 1. Show board after placement (before any merges)
+        const animBoard = JSON.parse(JSON.stringify(data.board_after_place));
+        gameState.board = animBoard;
         const placedHex = data.last_move.hex;
         renderBoard(placedHex);
-        await sleep(300);
+        await sleep(350);
 
-        // 2. Animate merges — sliding slab from source to target
+        // 2. Animate merges incrementally — each merge modifies the displayed board
         const mergeEvents = data.merge_events || [];
         for (const evt of mergeEvents) {
             const fromPos = hexPositions[evt.from];
             const toPos = hexPositions[evt.to];
 
             if (fromPos && toPos) {
-                // Draw a moving slab
+                // Draw sliding slab overlay
                 const slab = document.createElementNS(SVG_NS, 'rect');
                 slab.setAttribute('x', fromPos.cx - 14);
                 slab.setAttribute('y', fromPos.cy - 4);
@@ -562,22 +581,23 @@
                 const dy = toPos.cy - fromPos.cy;
                 slab.animate([
                     { transform: 'translate(0, 0)', opacity: 0.85 },
-                    { transform: `translate(${dx}px, ${dy}px)`, opacity: 0.6 },
+                    { transform: `translate(${dx}px, ${dy}px)`, opacity: 0.5 },
                 ], { duration: 280, easing: 'ease-in-out', fill: 'forwards' });
 
                 await sleep(280);
                 slab.remove();
             }
 
-            gameState.board = data.board;
+            // Apply this single merge to our local board and re-render
+            applyMergeToBoard(gameState.board, evt);
             renderBoard();
-            await sleep(120);
+            await sleep(100);
         }
 
         // 3. Animate clears with particle burst
         const clearEvents = data.clear_events || [];
         if (clearEvents.length > 0) {
-            gameState.board = data.board;
+            // Board should now match board_after_merges — render it
             renderBoard();
 
             const allParticles = [];
@@ -589,23 +609,28 @@
                     const colour = colours[evt.colour];
                     const particles = spawnParticles(svg, pos.cx, pos.cy, colour, 12);
                     allParticles.push(...particles);
-
                     const pointText = showPointsAtHex(svg, pos.cx, pos.cy, evt.count, colour);
                     allTexts.push(pointText);
                 }
+
+                // Apply clear to local board
+                applyClearToBoard(gameState.board, evt);
             }
 
-            // Bump the score display
             if (data.points_scored > 0) {
-                const currentPlayer = data.last_move.player;
-                bumpScore(currentPlayer);
+                bumpScore(data.last_move.player);
             }
 
-            await sleep(800);
+            await sleep(600);
 
-            // Clean up particles
-            allParticles.forEach(p => p.remove());
-            allTexts.forEach(t => t.remove());
+            // Re-render after clears to show the cleared board
+            renderBoard();
+
+            await sleep(300);
+
+            // Clean up overlay elements
+            allParticles.forEach(p => { try { p.remove(); } catch(e) {} });
+            allTexts.forEach(t => { try { t.remove(); } catch(e) {} });
         }
 
         // 4. Update state
