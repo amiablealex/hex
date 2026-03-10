@@ -552,7 +552,10 @@
         const colours = gameState.colours;
         const svg = document.getElementById('boardSvg');
 
-        // 1. Show board after placement (before any merges)
+        // 1. Clear selection immediately so valid-target outlines disappear
+        selectedStack = null;
+
+        // 2. Show board after placement (before any merges)
         const animBoard = JSON.parse(JSON.stringify(data.board_after_place));
         gameState.board = animBoard;
         const placedHex = data.last_move.hex;
