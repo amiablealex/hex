@@ -10,7 +10,7 @@
     <div class="home">
         <div class="home-logo">
             <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
-                <polygon points="32,4 56,18 56,46 32,60 8,46 8,18" 
+                <polygon points="32,4 56,18 56,46 32,60 8,46 8,18"
                          fill="#FAF6F1" stroke="#4A4340" stroke-width="2"/>
                 <circle cx="32" cy="24" r="6" fill="#E8A87C"/>
                 <circle cx="32" cy="36" r="6" fill="#85CDCA"/>
@@ -21,6 +21,7 @@
         </div>
 
         <div class="home-options">
+            <label class="option-label">Board size</label>
             <div class="size-select" id="sizeSelect">
                 <button class="size-btn" data-size="small">
                     Small
@@ -35,18 +36,40 @@
                     <span>37 tiles</span>
                 </button>
             </div>
-            <button class="btn btn-primary" id="createBtn">Start a game</button>
+
+            <label class="option-label mt-16">Game mode</label>
+            <div class="size-select" id="modeSelect">
+                <button class="size-btn active" data-mode="link">
+                    Send a link
+                    <span>Async play</span>
+                </button>
+                <button class="size-btn" data-mode="local">
+                    Same device
+                    <span>Pass & play</span>
+                </button>
+            </div>
+
+            <button class="btn btn-primary mt-16" id="createBtn">Start a game</button>
         </div>
     </div>
 
     <script>
         let selectedSize = 'medium';
+        let selectedMode = 'link';
 
-        document.querySelectorAll('.size-btn').forEach(btn => {
+        document.querySelectorAll('#sizeSelect .size-btn').forEach(btn => {
             btn.addEventListener('click', () => {
-                document.querySelectorAll('.size-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('#sizeSelect .size-btn').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
                 selectedSize = btn.dataset.size;
+            });
+        });
+
+        document.querySelectorAll('#modeSelect .size-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('#modeSelect .size-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                selectedMode = btn.dataset.mode;
             });
         });
 
@@ -59,7 +82,7 @@
                 const res = await fetch('/api/create', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ board_size: selectedSize })
+                    body: JSON.stringify({ board_size: selectedSize, game_mode: selectedMode })
                 });
                 const data = await res.json();
                 window.location.href = data.url;

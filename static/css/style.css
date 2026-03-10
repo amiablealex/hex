@@ -1,5 +1,5 @@
 /* ============================================================
-   HexaStack — Clean, minimal, warm pastel theme
+   HexaStack — Clean, minimal, warm pastel theme — Phase 2
    ============================================================ */
 
 :root {
@@ -10,7 +10,6 @@
     --text-faint: #B5AFAB;
     --border: #E8E0D8;
 
-    /* Pastel game colours */
     --c0: #E8A87C;  /* peach */
     --c1: #85CDCA;  /* teal */
     --c2: #D4A5A5;  /* rose */
@@ -68,6 +67,7 @@ html, body {
     min-height: 100dvh;
     gap: 40px;
     text-align: center;
+    padding: 16px;
 }
 
 .home-logo {
@@ -94,9 +94,19 @@ html, body {
 .home-options {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 8px;
     width: 100%;
     max-width: 280px;
+}
+
+.option-label {
+    font-size: 0.7rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-faint);
+    text-align: left;
+    margin-bottom: 2px;
 }
 
 .btn {
@@ -136,7 +146,6 @@ html, body {
     display: flex;
     gap: 8px;
     width: 100%;
-    max-width: 280px;
 }
 
 .size-btn {
@@ -266,7 +275,7 @@ html, body {
     fill: var(--hex-empty);
     stroke: var(--hex-stroke);
     stroke-width: 1.5;
-    transition: fill 0.15s ease, stroke 0.15s ease;
+    transition: fill 0.2s ease, stroke 0.2s ease;
 }
 
 .hex-cell.has-tiles polygon {
@@ -285,12 +294,36 @@ html, body {
     stroke-width: 2;
 }
 
-/* Tile stack circles inside hexes */
+/* Just-placed animation */
+.hex-cell.just-placed polygon {
+    stroke: var(--text);
+    stroke-width: 2.5;
+    animation: placePulse 0.4s ease;
+}
+
+@keyframes placePulse {
+    0% { stroke-width: 1.5; }
+    50% { stroke-width: 3.5; }
+    100% { stroke-width: 2.5; }
+}
+
+/* Clearing animation */
+.hex-cell.clearing .tile-dot {
+    animation: clearPop 0.4s ease forwards;
+}
+
+@keyframes clearPop {
+    0% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.4); opacity: 0.8; }
+    100% { transform: scale(0); opacity: 0; }
+}
+
+/* Tile dots */
 .tile-dot {
     transition: all 0.2s ease;
 }
 
-/* ---- Stack picker (bottom) ---- */
+/* ---- Stack picker ---- */
 
 .picker-area {
     padding: 16px 0 24px;
@@ -350,7 +383,7 @@ html, body {
     transform: scale(1.1);
 }
 
-/* ---- Status messages ---- */
+/* ---- Status bar ---- */
 
 .status-bar {
     text-align: center;
@@ -372,7 +405,36 @@ html, body {
     font-weight: 500;
 }
 
-/* ---- Game over overlay ---- */
+/* ---- Points popup ---- */
+
+.points-popup {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(0.5);
+    font-family: var(--font-mono);
+    font-size: 2rem;
+    font-weight: 600;
+    color: var(--text);
+    pointer-events: none;
+    opacity: 0;
+    z-index: 50;
+    transition: none;
+}
+
+.points-popup.show {
+    animation: popUp 1.2s ease forwards;
+}
+
+@keyframes popUp {
+    0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
+    15% { opacity: 1; transform: translate(-50%, -50%) scale(1.2); }
+    30% { transform: translate(-50%, -50%) scale(1); }
+    70% { opacity: 1; }
+    100% { opacity: 0; transform: translate(-50%, -70%) scale(1); }
+}
+
+/* ---- Game over ---- */
 
 .game-over {
     position: fixed;
@@ -431,13 +493,16 @@ html, body {
     background: white;
     border: 1.5px solid var(--border);
     border-radius: var(--radius-sm);
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     font-family: var(--font-mono);
     color: var(--text-light);
     cursor: pointer;
     transition: all 0.15s ease;
     justify-content: center;
     width: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
 }
 
 .share-link:active {
@@ -455,6 +520,7 @@ html, body {
     font-weight: 500;
     opacity: 0;
     transition: opacity 0.2s ease;
+    margin-top: 4px;
 }
 
 .copied-toast.show {
@@ -468,23 +534,13 @@ html, body {
     to { opacity: 1; transform: translateY(0); }
 }
 
-@keyframes pulse {
-    0%, 100% { transform: scale(1); }
-    50% { transform: scale(1.05); }
-}
-
 .fade-in {
     animation: fadeIn 0.3s ease forwards;
-}
-
-.pulse {
-    animation: pulse 0.3s ease;
 }
 
 /* ---- Utility ---- */
 
 .hidden { display: none !important; }
-
 .mt-8 { margin-top: 8px; }
 .mt-16 { margin-top: 16px; }
 .mb-8 { margin-bottom: 8px; }
