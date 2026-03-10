@@ -178,19 +178,69 @@
             g.appendChild(poly);
 
             if (stack.length > 0) {
-                const maxShow = Math.min(stack.length, 6);
                 const slabW = 28;
                 const slabH = 7;
+                const megaSlabH = 11;
+                const megaSlabW = 32;
                 const spacing = 3;
-                const totalH = maxShow * slabH + (maxShow - 1) * spacing;
-                const startY = cy + totalH / 2 - slabH;
 
-                for (let i = 0; i < maxShow; i++) {
-                    const colourIdx = stack[stack.length - maxShow + i];
+                // The mega-slab groups consecutive same-colour layers from the
+                // BOTTOM of the topmost colour run, not blindly the bottom 5.
+                // 
+                // Example: [red, yellow, yellow, yellow, yellow, yellow, yellow]
+                //   Top colour run = 6 yellows (indices 1-6)
+                //   Mega groups the bottom 5 of that run → mega(5 yellow) + 1 yellow on top
+                //   The red underneath is shown as a normal slab below the mega.
+                //
+                // We scan from the top to find the consecutive same-colour run,
+                // then decide how to visualize it.
+
+                const total = stack.length;
+
+                // Count consecutive same-colour from top
+                const topColour = stack[total - 1];
+                let topRun = 0;
+                for (let i = total - 1; i >= 0; i--) {
+                    if (stack[i] === topColour) topRun++;
+                    else break;
+                }
+
+                // Layers below the top colour run
+                const belowCount = total - topRun;
+
+                // Visual plan for the top run
+                const hasMega = topRun >= 5;
+                const megaCount = hasMega ? 5 : 0;
+                const topIndividuals = hasMega ? topRun - 5 : topRun;
+
+                // Below layers shown as individual slabs (max 4 visible)
+                const belowShow = Math.min(belowCount, 4);
+
+                // Calculate total visual height
+                let totalH = 0;
+                // Below slabs
+                if (belowShow > 0) totalH += belowShow * slabH + (belowShow - 1) * spacing;
+                // Gap between below and mega/top
+                if (belowShow > 0 && (hasMega || topIndividuals > 0 || (!hasMega && topRun > 0))) totalH += spacing;
+                // Mega slab
+                if (hasMega) totalH += megaSlabH;
+                // Gap between mega and top individuals
+                if (hasMega && topIndividuals > 0) totalH += spacing;
+                // Top individual slabs
+                if (!hasMega && topRun > 0) totalH += topRun * slabH + (topRun - 1) * spacing;
+                if (hasMega && topIndividuals > 0) totalH += topIndividuals * slabH + (topIndividuals - 1) * spacing;
+
+                const baseY = cy + totalH / 2;
+                let currentY = baseY;
+
+                // 1. Draw below-run slabs (bottom of stack, different colour)
+                for (let i = 0; i < belowShow; i++) {
+                    const colourIdx = stack[belowCount - belowShow + i];
+                    currentY -= slabH;
                     const rect = document.createElementNS(SVG_NS, 'rect');
                     rect.classList.add('tile-slab');
                     rect.setAttribute('x', cx - slabW / 2);
-                    rect.setAttribute('y', startY - i * (slabH + spacing));
+                    rect.setAttribute('y', currentY);
                     rect.setAttribute('width', slabW);
                     rect.setAttribute('height', slabH);
                     rect.setAttribute('rx', '3');
@@ -198,18 +248,71 @@
                     rect.setAttribute('stroke', 'rgba(255,255,255,0.6)');
                     rect.setAttribute('stroke-width', '1');
                     g.appendChild(rect);
+                    if (i < belowShow - 1) currentY -= spacing;
+                }
+                if (belowShow > 0) currentY -= spacing;
+
+                // 2. Draw mega-slab if top run >= 5
+                if (hasMega) {
+                    currentY -= megaSlabH;
+                    const rect = document.createElementNS(SVG_NS, 'rect');
+                    rect.classList.add('tile-slab');
+                    rect.setAttribute('x', cx - megaSlabW / 2);
+                    rect.setAttribute('y', currentY);
+                    rect.setAttribute('width', megaSlabW);
+                    rect.setAttribute('height', megaSlabH);
+                    rect.setAttribute('rx', '4');
+                    rect.setAttribute('fill', colours[topColour]);
+                    rect.setAttribute('stroke', 'rgba(255,255,255,0.8)');
+                    rect.setAttribute('stroke-width', '1.5');
+                    g.appendChild(rect);
+
+                    const numLabel = document.createElementNS(SVG_NS, 'text');
+                    numLabel.setAttribute('x', cx);
+                    numLabel.setAttribute('y', currentY + megaSlabH / 2 + 1);
+                    numLabel.setAttribute('text-anchor', 'middle');
+                    numLabel.setAttribute('dominant-baseline', 'middle');
+                    numLabel.setAttribute('font-size', '8');
+                    numLabel.setAttribute('font-family', 'DM Mono, monospace');
+                    numLabel.setAttribute('font-weight', '600');
+                    numLabel.setAttribute('fill', 'rgba(255,255,255,0.9)');
+                    numLabel.textContent = '5';
+                    g.appendChild(numLabel);
+
+                    if (topIndividuals > 0) currentY -= spacing;
                 }
 
-                // Count badge if stack is taller than we can show
-                if (stack.length > 6) {
+                // 3. Draw remaining individual slabs of the top colour run
+                const individualsToShow = hasMega ? topIndividuals : topRun;
+                if (!hasMega) {
+                    // No mega — just draw top run as individuals (already handled gap above)
+                }
+                for (let i = 0; i < individualsToShow; i++) {
+                    currentY -= slabH;
+                    const rect = document.createElementNS(SVG_NS, 'rect');
+                    rect.classList.add('tile-slab');
+                    rect.setAttribute('x', cx - slabW / 2);
+                    rect.setAttribute('y', currentY);
+                    rect.setAttribute('width', slabW);
+                    rect.setAttribute('height', slabH);
+                    rect.setAttribute('rx', '3');
+                    rect.setAttribute('fill', colours[topColour]);
+                    rect.setAttribute('stroke', 'rgba(255,255,255,0.6)');
+                    rect.setAttribute('stroke-width', '1');
+                    g.appendChild(rect);
+                    if (i < individualsToShow - 1) currentY -= spacing;
+                }
+
+                // 4. Badge if there are hidden below-layers
+                if (belowCount > belowShow) {
                     const badge = document.createElementNS(SVG_NS, 'text');
                     badge.setAttribute('x', cx);
-                    badge.setAttribute('y', startY - maxShow * (slabH + spacing) + 2);
+                    badge.setAttribute('y', baseY + 10);
                     badge.setAttribute('text-anchor', 'middle');
-                    badge.setAttribute('font-size', '9');
+                    badge.setAttribute('font-size', '8');
                     badge.setAttribute('font-family', 'DM Mono, monospace');
-                    badge.setAttribute('fill', '#8A8280');
-                    badge.textContent = `×${stack.length}`;
+                    badge.setAttribute('fill', '#B5AFAB');
+                    badge.textContent = `+${belowCount - belowShow}`;
                     g.appendChild(badge);
                 }
             }
