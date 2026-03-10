@@ -1,0 +1,490 @@
+/* ============================================================
+   HexaStack — Clean, minimal, warm pastel theme
+   ============================================================ */
+
+:root {
+    --bg: #FAF6F1;
+    --bg-warm: #F5EDE4;
+    --text: #4A4340;
+    --text-light: #8A8280;
+    --text-faint: #B5AFAB;
+    --border: #E8E0D8;
+
+    /* Pastel game colours */
+    --c0: #E8A87C;  /* peach */
+    --c1: #85CDCA;  /* teal */
+    --c2: #D4A5A5;  /* rose */
+    --c3: #C3B1E1;  /* lavender */
+    --c4: #A8D8B9;  /* sage */
+
+    --hex-empty: #EDE7E0;
+    --hex-stroke: #D8D0C8;
+    --hex-highlight: #D4C8BB;
+    --hex-valid: rgba(133, 205, 202, 0.3);
+
+    --radius-sm: 6px;
+    --radius-md: 12px;
+    --radius-lg: 20px;
+    --shadow-sm: 0 1px 3px rgba(74, 67, 64, 0.06);
+    --shadow-md: 0 4px 12px rgba(74, 67, 64, 0.08);
+
+    --font: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-mono: 'DM Mono', 'SF Mono', monospace;
+}
+
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=DM+Mono:wght@400;500&display=swap');
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100dvh;
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    overflow-x: hidden;
+}
+
+/* ---- Layout ---- */
+
+.container {
+    max-width: 440px;
+    margin: 0 auto;
+    padding: 16px;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+}
+
+/* ---- Home screen ---- */
+
+.home {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100dvh;
+    gap: 40px;
+    text-align: center;
+}
+
+.home-logo {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+
+.home-logo h1 {
+    font-size: 2rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: var(--text);
+}
+
+.home-logo p {
+    font-size: 0.9rem;
+    color: var(--text-light);
+    max-width: 260px;
+    line-height: 1.5;
+}
+
+.home-options {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 100%;
+    max-width: 280px;
+}
+
+.btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 14px 24px;
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-md);
+    background: white;
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 0.95rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    gap: 8px;
+    text-decoration: none;
+}
+
+.btn:hover, .btn:active {
+    background: var(--bg-warm);
+    border-color: var(--hex-highlight);
+}
+
+.btn-primary {
+    background: var(--text);
+    color: var(--bg);
+    border-color: var(--text);
+}
+
+.btn-primary:hover, .btn-primary:active {
+    background: #5D5552;
+}
+
+.size-select {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+    max-width: 280px;
+}
+
+.size-btn {
+    flex: 1;
+    padding: 10px 8px;
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: white;
+    color: var(--text-light);
+    font-family: var(--font);
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    text-align: center;
+}
+
+.size-btn.active {
+    border-color: var(--text);
+    color: var(--text);
+    background: var(--bg-warm);
+}
+
+.size-btn span {
+    display: block;
+    font-size: 0.7rem;
+    color: var(--text-faint);
+    margin-top: 2px;
+    font-weight: 400;
+}
+
+.size-btn.active span {
+    color: var(--text-light);
+}
+
+/* ---- Game header ---- */
+
+.game-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0 12px;
+}
+
+.score-block {
+    text-align: center;
+    min-width: 64px;
+}
+
+.score-label {
+    font-size: 0.7rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-faint);
+    margin-bottom: 2px;
+}
+
+.score-value {
+    font-family: var(--font-mono);
+    font-size: 1.4rem;
+    font-weight: 500;
+    color: var(--text);
+}
+
+.score-block.active .score-label {
+    color: var(--text-light);
+}
+
+.score-block.active .score-value {
+    color: var(--text);
+}
+
+.score-block:not(.active) .score-value {
+    color: var(--text-faint);
+}
+
+.turn-indicator {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+}
+
+.turn-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--text);
+}
+
+.turn-text {
+    font-size: 0.7rem;
+    color: var(--text-light);
+    font-weight: 500;
+}
+
+.target-score {
+    font-size: 0.7rem;
+    color: var(--text-faint);
+    text-align: center;
+    padding-bottom: 8px;
+}
+
+/* ---- Hex board ---- */
+
+.board-container {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 0;
+}
+
+.board-svg {
+    width: 100%;
+    max-width: 380px;
+    touch-action: manipulation;
+}
+
+.hex-cell {
+    cursor: pointer;
+    transition: opacity 0.15s ease;
+}
+
+.hex-cell polygon {
+    fill: var(--hex-empty);
+    stroke: var(--hex-stroke);
+    stroke-width: 1.5;
+    transition: fill 0.15s ease, stroke 0.15s ease;
+}
+
+.hex-cell.has-tiles polygon {
+    fill: var(--bg);
+}
+
+.hex-cell.valid-target polygon {
+    fill: var(--hex-valid);
+    stroke: var(--c1);
+    stroke-width: 2;
+    stroke-dasharray: 4 2;
+}
+
+.hex-cell.last-move polygon {
+    stroke: var(--text-light);
+    stroke-width: 2;
+}
+
+/* Tile stack circles inside hexes */
+.tile-dot {
+    transition: all 0.2s ease;
+}
+
+/* ---- Stack picker (bottom) ---- */
+
+.picker-area {
+    padding: 16px 0 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+
+.picker-label {
+    font-size: 0.75rem;
+    color: var(--text-faint);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.picker-stacks {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+}
+
+.stack-option {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 12px 20px;
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-md);
+    background: white;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    min-width: 72px;
+}
+
+.stack-option:hover, .stack-option:active {
+    border-color: var(--hex-highlight);
+    background: var(--bg-warm);
+}
+
+.stack-option.selected {
+    border-color: var(--text);
+    background: var(--bg-warm);
+    box-shadow: var(--shadow-md);
+}
+
+.stack-tile {
+    width: 32px;
+    height: 12px;
+    border-radius: 3px;
+    transition: transform 0.15s ease;
+}
+
+.stack-option.selected .stack-tile {
+    transform: scale(1.1);
+}
+
+/* ---- Status messages ---- */
+
+.status-bar {
+    text-align: center;
+    padding: 12px 0;
+}
+
+.status-text {
+    font-size: 0.85rem;
+    color: var(--text-light);
+    font-weight: 400;
+}
+
+.status-text.waiting {
+    color: var(--text-faint);
+}
+
+.status-text.your-turn {
+    color: var(--text);
+    font-weight: 500;
+}
+
+/* ---- Game over overlay ---- */
+
+.game-over {
+    position: fixed;
+    inset: 0;
+    background: rgba(250, 246, 241, 0.92);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+
+.game-over-card {
+    background: white;
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 32px;
+    text-align: center;
+    max-width: 300px;
+    width: 90%;
+    box-shadow: var(--shadow-md);
+}
+
+.game-over-card h2 {
+    font-size: 1.3rem;
+    font-weight: 600;
+    margin-bottom: 8px;
+    letter-spacing: -0.01em;
+}
+
+.game-over-card .final-scores {
+    display: flex;
+    justify-content: center;
+    gap: 32px;
+    margin: 20px 0;
+}
+
+.game-over-card .btn {
+    width: 100%;
+    margin-top: 8px;
+}
+
+/* ---- Share link ---- */
+
+.share-section {
+    padding: 12px 0;
+    text-align: center;
+}
+
+.share-link {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    background: white;
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 0.8rem;
+    font-family: var(--font-mono);
+    color: var(--text-light);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    justify-content: center;
+    width: 100%;
+}
+
+.share-link:active {
+    background: var(--bg-warm);
+}
+
+.share-link .copy-icon {
+    flex-shrink: 0;
+    color: var(--text-faint);
+}
+
+.copied-toast {
+    font-size: 0.75rem;
+    color: var(--c1);
+    font-weight: 500;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.copied-toast.show {
+    opacity: 1;
+}
+
+/* ---- Animations ---- */
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+}
+
+.fade-in {
+    animation: fadeIn 0.3s ease forwards;
+}
+
+.pulse {
+    animation: pulse 0.3s ease;
+}
+
+/* ---- Utility ---- */
+
+.hidden { display: none !important; }
+
+.mt-8 { margin-top: 8px; }
+.mt-16 { margin-top: 16px; }
+.mb-8 { margin-bottom: 8px; }

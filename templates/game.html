@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>HexaStack</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container" id="app">
+        <!-- Header with scores -->
+        <div class="game-header">
+            <div class="score-block" id="p1Score">
+                <div class="score-label">Player 1</div>
+                <div class="score-value" id="p1Value">0</div>
+            </div>
+            <div class="turn-indicator">
+                <div class="turn-dot" id="turnDot"></div>
+                <div class="turn-text" id="turnText">—</div>
+            </div>
+            <div class="score-block" id="p2Score">
+                <div class="score-label">Player 2</div>
+                <div class="score-value" id="p2Value">0</div>
+            </div>
+        </div>
+
+        <div class="target-score" id="targetScore"></div>
+
+        <!-- Hex board -->
+        <div class="board-container">
+            <svg class="board-svg" id="boardSvg" viewBox="0 0 400 400"></svg>
+        </div>
+
+        <!-- Status bar -->
+        <div class="status-bar">
+            <div class="status-text" id="statusText">Loading…</div>
+        </div>
+
+        <!-- Stack picker -->
+        <div class="picker-area" id="pickerArea">
+            <div class="picker-label">Choose a stack</div>
+            <div class="picker-stacks" id="pickerStacks"></div>
+        </div>
+
+        <!-- Share link -->
+        <div class="share-section" id="shareSection">
+            <div class="share-link" id="shareLink" onclick="copyLink()">
+                <span class="copy-icon">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <rect x="5" y="5" width="8" height="8" rx="1.5"/>
+                        <path d="M3 11V3.5A1.5 1.5 0 0 1 4.5 2H11"/>
+                    </svg>
+                </span>
+                <span id="shareLinkText">Copy link to share</span>
+            </div>
+            <div class="copied-toast" id="copiedToast">Copied!</div>
+        </div>
+    </div>
+
+    <!-- Game over overlay -->
+    <div class="game-over hidden" id="gameOver">
+        <div class="game-over-card fade-in">
+            <h2 id="gameOverTitle">Game Over</h2>
+            <div class="final-scores">
+                <div class="score-block">
+                    <div class="score-label">Player 1</div>
+                    <div class="score-value" id="finalP1">0</div>
+                </div>
+                <div class="score-block">
+                    <div class="score-label">Player 2</div>
+                    <div class="score-value" id="finalP2">0</div>
+                </div>
+            </div>
+            <a href="/" class="btn btn-primary">New game</a>
+            <button class="btn mt-8" onclick="document.getElementById('gameOver').classList.add('hidden')">
+                View board
+            </button>
+        </div>
+    </div>
+
+    <script>
+    // ================================================================
+    // HexaStack — Game Client
+    // ================================================================
+
+    const GAME_ID = '{{ game_id }}';
+    const HEX_SIZE = 36;
+    const SVG_NS = 'http://www.w3.org/2000/svg';
+
+    let gameState = null;
+    let selectedStack = null;
+    let playerNumber = null; // determined by which turn you act on
+
+    // ---- Hex geometry ----
+
+    function hexToPixel(q, r, size) {
+        const x = size * (Math.sqrt(3) * q + (Math.sqrt(3) / 2) * r);
+        const y = size * (1.5 * r);
+        return { x, y };
+    }
+
+    function hexCorners(cx, cy, size) {
+        const corners = [];
+        for (let i = 0; i < 6; i++) {
+            const angle = (Math.PI / 180) * (60 * i - 30);
+            corners.push({
+                x: cx + size * Math.cos(angle),
+                y: cy + size * Math.sin(angle),
+            });
+        }
+        return corners;
+    }
+
+    // ---- Rendering ----
+
+    function renderBoard() {
+        if (!gameState) return;
+
+        const svg = document.getElementById('boardSvg');
+        svg.innerHTML = '';
+
+        const coords = gameState.coords;
+        const board = gameState.board;
+        const colours = gameState.colours;
+
+        // Calculate bounds for viewBox
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        coords.forEach(([q, r]) => {
+            const { x, y } = hexToPixel(q, r, HEX_SIZE);
+            minX = Math.min(minX, x - HEX_SIZE);
+            maxX = Math.max(maxX, x + HEX_SIZE);
+            minY = Math.min(minY, y - HEX_SIZE);
+            maxY = Math.max(maxY, y + HEX_SIZE);
+        });
+
+        const pad = 20;
+        const vw = maxX - minX + pad * 2;
+        const vh = maxY - minY + pad * 2;
+        const ox = -minX + pad;
+        const oy = -minY + pad;
+        svg.setAttribute('viewBox', `0 0 ${vw} ${vh}`);
+
+        // Draw hexes
+        coords.forEach(([q, r]) => {
+            const key = `${q},${r}`;
+            const { x, y } = hexToPixel(q, r, HEX_SIZE);
+            const cx = x + ox;
+            const cy = y + oy;
+            const stack = board[key] || [];
+
+            const g = document.createElementNS(SVG_NS, 'g');
+            g.classList.add('hex-cell');
+            g.dataset.hex = key;
+
+            if (stack.length > 0) {
+                g.classList.add('has-tiles');
+            }
+
+            // Highlight last move
+            if (gameState.last_move && gameState.last_move.hex === key) {
+                g.classList.add('last-move');
+            }
+
+            // Valid target highlighting
+            if (selectedStack !== null && stack.length === 0) {
+                g.classList.add('valid-target');
+            }
+
+            // Hex polygon
+            const corners = hexCorners(cx, cy, HEX_SIZE - 2);
+            const poly = document.createElementNS(SVG_NS, 'polygon');
+            poly.setAttribute('points', corners.map(c => `${c.x},${c.y}`).join(' '));
+            g.appendChild(poly);
+
+            // Draw tile stack as layered dots
+            if (stack.length > 0) {
+                const maxShow = Math.min(stack.length, 8);
+                const dotR = 6;
+                const spacing = 5;
+                const totalH = (maxShow - 1) * spacing;
+                const startY = cy + totalH / 2;
+
+                for (let i = 0; i < maxShow; i++) {
+                    const colourIdx = stack[stack.length - maxShow + i];
+                    const circle = document.createElementNS(SVG_NS, 'circle');
+                    circle.classList.add('tile-dot');
+                    circle.setAttribute('cx', cx);
+                    circle.setAttribute('cy', startY - i * spacing);
+                    circle.setAttribute('r', dotR);
+                    circle.setAttribute('fill', colours[colourIdx]);
+                    circle.setAttribute('stroke', '#FFF');
+                    circle.setAttribute('stroke-width', '1.5');
+                    g.appendChild(circle);
+                }
+
+                // Count label if many
+                if (stack.length > 8) {
+                    const label = document.createElementNS(SVG_NS, 'text');
+                    label.setAttribute('x', cx);
+                    label.setAttribute('y', cy - totalH / 2 - 12);
+                    label.setAttribute('text-anchor', 'middle');
+                    label.setAttribute('font-size', '10');
+                    label.setAttribute('font-family', 'DM Mono, monospace');
+                    label.setAttribute('fill', '#8A8280');
+                    label.textContent = `×${stack.length}`;
+                    g.appendChild(label);
+                }
+            }
+
+            // Click handler
+            g.addEventListener('click', () => onHexClick(key));
+            svg.appendChild(g);
+        });
+    }
+
+    function renderPicker() {
+        const container = document.getElementById('pickerStacks');
+        container.innerHTML = '';
+
+        if (!gameState || gameState.status !== 'active') {
+            document.getElementById('pickerArea').classList.add('hidden');
+            return;
+        }
+
+        const isMyTurn = true; // async: whoever loads can play
+        if (!isMyTurn) {
+            document.getElementById('pickerArea').classList.add('hidden');
+            return;
+        }
+
+        document.getElementById('pickerArea').classList.remove('hidden');
+        const colours = gameState.colours;
+
+        gameState.offered_stacks.forEach((stack, idx) => {
+            const div = document.createElement('div');
+            div.classList.add('stack-option');
+            if (selectedStack === idx) div.classList.add('selected');
+
+            // Render tiles bottom to top
+            for (let i = 0; i < stack.length; i++) {
+                const tile = document.createElement('div');
+                tile.classList.add('stack-tile');
+                tile.style.backgroundColor = colours[stack[i]];
+                div.appendChild(tile);
+            }
+
+            div.addEventListener('click', () => {
+                selectedStack = idx;
+                renderPicker();
+                renderBoard(); // update valid targets
+            });
+
+            container.appendChild(div);
+        });
+    }
+
+    function renderScores() {
+        if (!gameState) return;
+
+        document.getElementById('p1Value').textContent = gameState.player1_score;
+        document.getElementById('p2Value').textContent = gameState.player2_score;
+        document.getElementById('targetScore').textContent =
+            `First to ${gameState.target_score} wins`;
+
+        const p1Block = document.getElementById('p1Score');
+        const p2Block = document.getElementById('p2Score');
+        p1Block.classList.toggle('active', gameState.current_turn === 1);
+        p2Block.classList.toggle('active', gameState.current_turn === 2);
+
+        const turnText = document.getElementById('turnText');
+        if (gameState.status === 'finished') {
+            turnText.textContent = 'Done';
+        } else {
+            turnText.textContent = `P${gameState.current_turn}'s turn`;
+        }
+    }
+
+    function renderStatus() {
+        const el = document.getElementById('statusText');
+        if (!gameState) {
+            el.textContent = 'Loading…';
+            return;
+        }
+
+        if (gameState.status === 'finished') {
+            el.textContent = 'Game over!';
+            el.className = 'status-text';
+            showGameOver();
+            return;
+        }
+
+        if (selectedStack !== null) {
+            el.textContent = 'Tap an empty hex to place';
+            el.className = 'status-text your-turn';
+        } else {
+            el.textContent = `Player ${gameState.current_turn}'s turn — pick a stack below`;
+            el.className = 'status-text your-turn';
+        }
+    }
+
+    function showGameOver() {
+        const overlay = document.getElementById('gameOver');
+        overlay.classList.remove('hidden');
+
+        document.getElementById('finalP1').textContent = gameState.player1_score;
+        document.getElementById('finalP2').textContent = gameState.player2_score;
+
+        const title = document.getElementById('gameOverTitle');
+        if (gameState.player1_score > gameState.player2_score) {
+            title.textContent = 'Player 1 wins!';
+        } else if (gameState.player2_score > gameState.player1_score) {
+            title.textContent = 'Player 2 wins!';
+        } else {
+            title.textContent = "It's a tie!";
+        }
+
+        document.getElementById('pickerArea').classList.add('hidden');
+    }
+
+    function renderShareLink() {
+        const url = window.location.href;
+        document.getElementById('shareLinkText').textContent = url;
+    }
+
+    function renderAll() {
+        renderBoard();
+        renderPicker();
+        renderScores();
+        renderStatus();
+        renderShareLink();
+    }
+
+    // ---- Interactions ----
+
+    function onHexClick(hexKey) {
+        if (!gameState || gameState.status !== 'active') return;
+        if (selectedStack === null) return;
+
+        const stack = gameState.board[hexKey] || [];
+        if (stack.length > 0) return; // must be empty
+
+        makeMove(selectedStack, hexKey);
+    }
+
+    async function makeMove(stackIndex, targetHex) {
+        const statusEl = document.getElementById('statusText');
+        statusEl.textContent = 'Placing…';
+
+        try {
+            const res = await fetch(`/api/game/${GAME_ID}/move`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    stack_index: stackIndex,
+                    target_hex: targetHex,
+                }),
+            });
+
+            const data = await res.json();
+
+            if (data.error) {
+                statusEl.textContent = data.error;
+                return;
+            }
+
+            // Update game state
+            gameState.board = data.board;
+            gameState.current_turn = data.current_turn;
+            gameState.player1_score = data.player1_score;
+            gameState.player2_score = data.player2_score;
+            gameState.offered_stacks = data.offered_stacks;
+            gameState.status = data.status;
+            gameState.last_move = data.last_move;
+
+            selectedStack = null;
+            renderAll();
+
+            if (data.points_scored > 0) {
+                // Quick visual feedback
+                statusEl.textContent = `Cleared! +${data.points_scored} points`;
+                statusEl.className = 'status-text your-turn';
+            }
+        } catch (e) {
+            statusEl.textContent = 'Connection error, try again';
+        }
+    }
+
+    // ---- Share link ----
+
+    function copyLink() {
+        const url = window.location.href;
+        navigator.clipboard.writeText(url).then(() => {
+            const toast = document.getElementById('copiedToast');
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 1500);
+        });
+    }
+
+    // ---- Init ----
+
+    async function loadGame() {
+        try {
+            const res = await fetch(`/api/game/${GAME_ID}`);
+            gameState = await res.json();
+            selectedStack = null;
+            renderAll();
+        } catch (e) {
+            document.getElementById('statusText').textContent =
+                'Could not load game';
+        }
+    }
+
+    loadGame();
+    </script>
+</body>
+</html>

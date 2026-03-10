@@ -1,0 +1,16 @@
+[Unit]
+Description=HexaStack Game Server
+After=network.target
+
+[Service]
+Type=notify
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/hexastack
+ExecStart=/home/pi/hexastack/venv_hexastack/bin/gunicorn -c gunicorn.conf.py app:app
+Restart=on-failure
+RestartSec=5
+Environment=HEXASTACK_DB=/home/pi/hexastack/hexastack.db
+
+[Install]
+WantedBy=multi-user.target

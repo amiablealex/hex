@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>HexaStack</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="home">
+        <div class="home-logo">
+            <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
+                <polygon points="32,4 56,18 56,46 32,60 8,46 8,18" 
+                         fill="#FAF6F1" stroke="#4A4340" stroke-width="2"/>
+                <circle cx="32" cy="24" r="6" fill="#E8A87C"/>
+                <circle cx="32" cy="36" r="6" fill="#85CDCA"/>
+                <circle cx="32" cy="48" r="6" fill="#D4A5A5"/>
+            </svg>
+            <h1>HexaStack</h1>
+            <p>A turn-based tile sorting game for two players</p>
+        </div>
+
+        <div class="home-options">
+            <div class="size-select" id="sizeSelect">
+                <button class="size-btn" data-size="small">
+                    Small
+                    <span>7 tiles</span>
+                </button>
+                <button class="size-btn active" data-size="medium">
+                    Medium
+                    <span>19 tiles</span>
+                </button>
+                <button class="size-btn" data-size="large">
+                    Large
+                    <span>37 tiles</span>
+                </button>
+            </div>
+            <button class="btn btn-primary" id="createBtn">Start a game</button>
+        </div>
+    </div>
+
+    <script>
+        let selectedSize = 'medium';
+
+        document.querySelectorAll('.size-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.size-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                selectedSize = btn.dataset.size;
+            });
+        });
+
+        document.getElementById('createBtn').addEventListener('click', async () => {
+            const btn = document.getElementById('createBtn');
+            btn.textContent = 'Creating…';
+            btn.disabled = true;
+
+            try {
+                const res = await fetch('/api/create', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ board_size: selectedSize })
+                });
+                const data = await res.json();
+                window.location.href = data.url;
+            } catch (e) {
+                btn.textContent = 'Start a game';
+                btn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>
