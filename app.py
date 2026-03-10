@@ -25,8 +25,8 @@ BOARD_CONFIGS = {
     "large": {"radius": 3, "hexes": 37, "colours": 5, "target_score": 100},
 }
 
-COLOUR_PALETTE = ["#E8A87C", "#85CDCA", "#D4A5A5", "#C3B1E1", "#A8D8B9"]
-COLOUR_NAMES = ["peach", "teal", "rose", "lavender", "sage"]
+COLOUR_PALETTE = ["#E07B5A", "#5AAFB8", "#C482D0", "#D4B84A", "#6B9FDE"]
+COLOUR_NAMES = ["coral", "teal", "plum", "honey", "cornflower"]
 
 
 def hex_grid_coords(radius):

@@ -1,5 +1,5 @@
 /* ============================================================
-   HexaStack — Clean, minimal, warm pastel theme — Phase 2
+   HexaStack — Clean, minimal, warm pastel theme — Phase 3
    ============================================================ */
 
 :root {
@@ -10,16 +10,17 @@
     --text-faint: #B5AFAB;
     --border: #E8E0D8;
 
-    --c0: #E8A87C;  /* peach */
-    --c1: #85CDCA;  /* teal */
-    --c2: #D4A5A5;  /* rose */
-    --c3: #C3B1E1;  /* lavender */
-    --c4: #A8D8B9;  /* sage */
+    /* Distinguishable pastel palette — spread across hue wheel */
+    --c0: #E07B5A;  /* coral */
+    --c1: #5AAFB8;  /* teal */
+    --c2: #C482D0;  /* plum */
+    --c3: #D4B84A;  /* honey */
+    --c4: #6B9FDE;  /* cornflower */
 
     --hex-empty: #EDE7E0;
     --hex-stroke: #D8D0C8;
     --hex-highlight: #D4C8BB;
-    --hex-valid: rgba(133, 205, 202, 0.3);
+    --hex-valid: rgba(90, 175, 184, 0.25);
 
     --radius-sm: 6px;
     --radius-md: 12px;
@@ -209,6 +210,17 @@ html, body {
     font-size: 1.4rem;
     font-weight: 500;
     color: var(--text);
+    transition: transform 0.2s ease;
+}
+
+.score-value.bump {
+    animation: scoreBump 0.4s ease;
+}
+
+@keyframes scoreBump {
+    0% { transform: scale(1); }
+    40% { transform: scale(1.3); }
+    100% { transform: scale(1); }
 }
 
 .score-block.active .score-label {
@@ -307,19 +319,8 @@ html, body {
     100% { stroke-width: 2.5; }
 }
 
-/* Clearing animation */
-.hex-cell.clearing .tile-dot {
-    animation: clearPop 0.4s ease forwards;
-}
-
-@keyframes clearPop {
-    0% { transform: scale(1); opacity: 1; }
-    50% { transform: scale(1.4); opacity: 0.8; }
-    100% { transform: scale(0); opacity: 0; }
-}
-
-/* Tile dots */
-.tile-dot {
+/* Tile slab styling (SVG rects) */
+.tile-slab {
     transition: all 0.2s ease;
 }
 
@@ -387,9 +388,9 @@ html, body {
 }
 
 .stack-tile {
-    width: 32px;
-    height: 12px;
-    border-radius: 3px;
+    width: 36px;
+    height: 14px;
+    border-radius: 4px;
     transition: transform 0.15s ease;
 }
 
@@ -427,7 +428,7 @@ html, body {
     left: 50%;
     transform: translate(-50%, -50%) scale(0.5);
     font-family: var(--font-mono);
-    font-size: 2rem;
+    font-size: 2.2rem;
     font-weight: 600;
     color: var(--text);
     pointer-events: none;
@@ -437,14 +438,14 @@ html, body {
 }
 
 .points-popup.show {
-    animation: popUp 1.2s ease forwards;
+    animation: popUp 1.4s ease forwards;
 }
 
 @keyframes popUp {
     0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
-    15% { opacity: 1; transform: translate(-50%, -50%) scale(1.2); }
-    30% { transform: translate(-50%, -50%) scale(1); }
-    70% { opacity: 1; }
+    12% { opacity: 1; transform: translate(-50%, -50%) scale(1.3); }
+    25% { transform: translate(-50%, -50%) scale(1); }
+    65% { opacity: 1; }
     100% { opacity: 0; transform: translate(-50%, -70%) scale(1); }
 }
 
