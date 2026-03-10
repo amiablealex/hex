@@ -372,6 +372,20 @@ html, body {
     box-shadow: var(--shadow-md);
 }
 
+.stack-option.placed {
+    border-color: var(--border);
+    background: var(--bg-warm);
+    cursor: default;
+    opacity: 0.5;
+}
+
+.stack-check {
+    font-size: 1rem;
+    color: var(--text-faint);
+    line-height: 1;
+    padding: 4px 0;
+}
+
 .stack-tile {
     width: 32px;
     height: 12px;

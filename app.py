@@ -1,5 +1,6 @@
-"""HexaStack - Async turn-based hex tile sorting game. Phase 2."""
+"""HexaStack - Async turn-based hex tile sorting game. Phase 2.5."""
 
+import copy
 import json
 import os
 import random
@@ -15,7 +16,7 @@ app.config["DATABASE"] = os.environ.get(
 )
 
 # ---------------------------------------------------------------------------
-# Board geometry helpers
+# Board geometry
 # ---------------------------------------------------------------------------
 
 BOARD_CONFIGS = {
@@ -75,6 +76,7 @@ def init_db():
             player1_score INTEGER NOT NULL DEFAULT 0,
             player2_score INTEGER NOT NULL DEFAULT 0,
             offered_stacks TEXT NOT NULL,
+            placed_this_turn INTEGER NOT NULL DEFAULT 0,
             status TEXT NOT NULL DEFAULT 'active',
             last_move TEXT,
             seed INTEGER NOT NULL,
@@ -119,16 +121,69 @@ def _count_top(stack):
     return count, top
 
 
+def _find_all_mergeable_pairs(board, coords_set):
+    """Find all adjacent pairs with matching top colours."""
+    pairs = []
+    seen = set()
+    for coord_str in board:
+        stack = board[coord_str]
+        if not stack or coord_str not in coords_set:
+            continue
+        our_count, top_colour = _count_top(stack)
+        q, r = map(int, coord_str.split(","))
+
+        for nq, nr in hex_neighbours(q, r):
+            nkey = f"{nq},{nr}"
+            if nkey not in coords_set or nkey not in board or not board[nkey]:
+                continue
+            if board[nkey][-1] != top_colour:
+                continue
+            pair_key = tuple(sorted([coord_str, nkey]))
+            if pair_key in seen:
+                continue
+            seen.add(pair_key)
+            their_count, _ = _count_top(board[nkey])
+            pairs.append((coord_str, nkey, top_colour, our_count, their_count))
+    return pairs
+
+
+def _execute_merge(board, from_key, to_key, count):
+    """Execute a single merge: move top `count` layers from from_key to to_key."""
+    from_stack = board[from_key]
+    transferred = from_stack[-count:]
+    board[from_key] = from_stack[:-count]
+    board[to_key] = board[to_key] + transferred
+    return board
+
+
+def _simulate_merges(board, coords_set):
+    """Run merges to completion on a board copy. Returns (board, total_merges, total_layers_moved)."""
+    board = copy.deepcopy(board)
+    total_merges = 0
+    total_layers = 0
+    changed = True
+    while changed:
+        changed = False
+        pairs = _find_all_mergeable_pairs(board, coords_set)
+        if not pairs:
+            break
+        # Pick first pair, smaller into larger
+        coord_a, coord_b, colour, count_a, count_b = pairs[0]
+        if count_a <= count_b:
+            board = _execute_merge(board, coord_a, coord_b, count_a)
+            total_layers += count_a
+        else:
+            board = _execute_merge(board, coord_b, coord_a, count_b)
+            total_layers += count_b
+        total_merges += 1
+        changed = True
+    return board, total_merges, total_layers
+
+
 def process_merges(board, coords_set):
     """
-    Process auto-merging of adjacent same-colour tops.
-
-    Rules:
-    - Only the top colour of a stack can participate in merging.
-    - All consecutive same-colour layers from the top transfer as a group.
-    - Smaller group merges INTO larger group. On tie, use coord key as tiebreak.
-    - After a transfer exposes a new colour, chain reactions can occur.
-    - Scans all adjacent pairs each pass to handle bridge placements.
+    Smart merge: when multiple merge directions exist, try each and pick
+    the path that produces the most total chain merges (be kind to player).
 
     Returns (board, merge_events).
     """
@@ -136,52 +191,53 @@ def process_merges(board, coords_set):
     changed = True
     while changed:
         changed = False
-        # Find the best merge: scan all cells, find adjacent matching pairs
-        best = None  # (from_key, to_key, colour, count)
+        pairs = _find_all_mergeable_pairs(board, coords_set)
+        if not pairs:
+            break
 
-        for coord_str in board:
-            stack = board[coord_str]
-            if not stack or coord_str not in coords_set:
-                continue
+        # If only one pair, just do it
+        if len(pairs) == 1:
+            coord_a, coord_b, colour, count_a, count_b = pairs[0]
+            if count_a <= count_b:
+                from_key, to_key, count = coord_a, coord_b, count_a
+            else:
+                from_key, to_key, count = coord_b, coord_a, count_b
+        else:
+            # Multiple possible merges — simulate each to find best outcome
+            best_score = -1
+            best_merge = None
 
-            our_count, top_colour = _count_top(stack)
-            q, r = map(int, coord_str.split(","))
+            for coord_a, coord_b, colour, count_a, count_b in pairs:
+                # Try direction A -> B
+                sim_board = copy.deepcopy(board)
+                sim_board = _execute_merge(sim_board, coord_a, coord_b, count_a)
+                _, merges_ab, layers_ab = _simulate_merges(sim_board, coords_set)
+                score_ab = merges_ab * 100 + layers_ab + count_a
 
-            for nq, nr in hex_neighbours(q, r):
-                nkey = f"{nq},{nr}"
-                if nkey not in coords_set or nkey not in board or not board[nkey]:
-                    continue
-                nstack = board[nkey]
-                if nstack[-1] != top_colour:
-                    continue
+                # Try direction B -> A
+                sim_board = copy.deepcopy(board)
+                sim_board = _execute_merge(sim_board, coord_b, coord_a, count_b)
+                _, merges_ba, layers_ba = _simulate_merges(sim_board, coords_set)
+                score_ba = merges_ba * 100 + layers_ba + count_b
 
-                their_count, _ = _count_top(nstack)
-
-                # Determine who moves into whom
-                # Smaller moves into larger; on tie, higher coord key moves into lower
-                if our_count < their_count or (our_count == their_count and coord_str > nkey):
-                    from_key, to_key, count = coord_str, nkey, our_count
+                if score_ab >= score_ba:
+                    if score_ab > best_score:
+                        best_score = score_ab
+                        best_merge = (coord_a, coord_b, count_a, colour)
                 else:
-                    from_key, to_key, count = nkey, coord_str, their_count
+                    if score_ba > best_score:
+                        best_score = score_ba
+                        best_merge = (coord_b, coord_a, count_b, colour)
 
-                # Pick this merge (first found is fine — we restart after each)
-                best = (from_key, to_key, top_colour, count)
-                break
+            from_key, to_key, count, colour = best_merge
 
-            if best:
-                break
-
-        if best:
-            from_key, to_key, colour, count = best
-            from_stack = board[from_key]
-            transferred = from_stack[-count:]
-            board[from_key] = from_stack[:-count]
-            board[to_key] = board[to_key] + transferred
-            merge_events.append({
-                "from": from_key, "to": to_key,
-                "colour": colour, "count": count,
-            })
-            changed = True
+        board = _execute_merge(board, from_key, to_key, count)
+        colour_val = board[to_key][-1]  # colour that was merged
+        merge_events.append({
+            "from": from_key, "to": to_key,
+            "colour": colour_val, "count": count,
+        })
+        changed = True
 
     return board, merge_events
 
@@ -249,7 +305,6 @@ def get_player_token():
 
 
 def ensure_token_cookie(resp):
-    """Set player token cookie if not present."""
     if not request.cookies.get("hexastack_player"):
         resp.set_cookie(
             "hexastack_player",
@@ -302,8 +357,8 @@ def create_game():
     db.execute(
         """
         INSERT INTO games (id, board_size, board_state, offered_stacks, seed,
-                          game_mode, player1_token, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                          game_mode, player1_token, placed_this_turn, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
         """,
         (
             game_id, board_size, json.dumps(board), json.dumps(stacks), seed,
@@ -344,7 +399,6 @@ def get_game(game_id):
     colours = COLOUR_PALETTE[:config["colours"]]
     colour_names = COLOUR_NAMES[:config["colours"]]
 
-    # Identify player in link mode
     player_number = None
     if game["game_mode"] == "link":
         token = get_player_token()
@@ -370,6 +424,7 @@ def get_game(game_id):
         "player1_score": game["player1_score"],
         "player2_score": game["player2_score"],
         "offered_stacks": json.loads(game["offered_stacks"]),
+        "placed_this_turn": game["placed_this_turn"],
         "status": game["status"],
         "last_move": json.loads(game["last_move"]) if game["last_move"] else None,
         "move_count": game["move_count"],
@@ -415,15 +470,21 @@ def make_move(game_id):
 
     if stack_index < 0 or stack_index >= len(offered):
         return jsonify({"error": "Invalid stack index"}), 400
+    if offered[stack_index] is None:
+        return jsonify({"error": "Stack already placed"}), 400
     if target_hex not in coords_set:
         return jsonify({"error": "Invalid hex coordinate"}), 400
     if board.get(target_hex) and len(board[target_hex]) > 0:
         return jsonify({"error": "Hex is not empty"}), 400
 
+    # Place the stack
     chosen_stack = offered[stack_index]
     board[target_hex] = list(chosen_stack)
 
-    # Process merges then clears, then chain if clears happened
+    # Mark stack as used (None = placed)
+    offered[stack_index] = None
+
+    # Process merges then clears, chain if needed
     board, merge_events = process_merges(board, coords_set)
     board, points, clear_events = process_clears(board)
 
@@ -434,6 +495,7 @@ def make_move(game_id):
         points += extra_points
         clear_events.extend(extra_clears)
 
+    # Update scores
     current_player = game["current_turn"]
     p1_score = game["player1_score"]
     p2_score = game["player2_score"]
@@ -444,9 +506,27 @@ def make_move(game_id):
         else:
             p2_score += points
 
-    move_count = game["move_count"] + 1
-    next_turn = 2 if current_player == 1 else 1
+    placed_this_turn = game["placed_this_turn"] + 1
 
+    # Check if all 3 stacks placed or no empty hexes remain
+    remaining_stacks = [s for s in offered if s is not None]
+    has_empty_hex = any(
+        not board.get(f"{q},{r}") for q, r in coords
+    )
+    turn_complete = (placed_this_turn >= 3) or (len(remaining_stacks) == 0) or (not has_empty_hex)
+
+    if turn_complete:
+        next_turn = 2 if current_player == 1 else 1
+        move_count = game["move_count"] + 1
+        next_stacks = generate_stacks(game["seed"], move_count, config["colours"])
+        placed_count = 0
+    else:
+        next_turn = current_player
+        move_count = game["move_count"]
+        next_stacks = offered  # keep the same stacks with nulls for placed ones
+        placed_count = placed_this_turn
+
+    # Check game over
     status = "active"
     if check_game_over(board, coords_set, config["target_score"], p1_score, p2_score):
         status = "finished"
@@ -454,7 +534,6 @@ def make_move(game_id):
         p1_score += tidiness
         p2_score += tidiness
 
-    next_stacks = generate_stacks(game["seed"], move_count, config["colours"])
     now = datetime.now(timezone.utc).isoformat()
 
     last_move = {
@@ -470,14 +549,16 @@ def make_move(game_id):
         UPDATE games SET
             board_state = ?, current_turn = ?,
             player1_score = ?, player2_score = ?,
-            offered_stacks = ?, status = ?,
-            last_move = ?, move_count = ?, updated_at = ?
+            offered_stacks = ?, placed_this_turn = ?,
+            status = ?, last_move = ?,
+            move_count = ?, updated_at = ?
         WHERE id = ?
         """,
         (
             json.dumps(board), next_turn, p1_score, p2_score,
-            json.dumps(next_stacks), status,
-            json.dumps(last_move), move_count, now, game_id,
+            json.dumps(next_stacks), placed_count,
+            status, json.dumps(last_move),
+            move_count, now, game_id,
         ),
     )
     db.commit()
@@ -490,6 +571,8 @@ def make_move(game_id):
         "player1_score": p1_score,
         "player2_score": p2_score,
         "offered_stacks": next_stacks,
+        "placed_this_turn": placed_count,
+        "turn_complete": turn_complete,
         "status": status,
         "last_move": last_move,
         "merge_events": merge_events,

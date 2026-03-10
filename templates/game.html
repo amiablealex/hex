@@ -34,7 +34,7 @@
         </div>
 
         <div class="picker-area hidden" id="pickerArea">
-            <div class="picker-label">Choose a stack</div>
+            <div class="picker-label" id="pickerLabel">Place your 3 stacks</div>
             <div class="picker-stacks" id="pickerStacks"></div>
         </div>
 
@@ -52,7 +52,6 @@
         </div>
     </div>
 
-    <!-- Game over overlay -->
     <div class="game-over hidden" id="gameOver">
         <div class="game-over-card fade-in">
             <h2 id="gameOverTitle">Game Over</h2>
@@ -73,7 +72,6 @@
         </div>
     </div>
 
-    <!-- Points popup -->
     <div class="points-popup hidden" id="pointsPopup">+0</div>
 
     <script>
@@ -84,8 +82,6 @@
     let gameState = null;
     let selectedStack = null;
     let isAnimating = false;
-
-    // Hex pixel positions cache
     let hexPositions = {};
 
     // ---- Hex geometry ----
@@ -108,21 +104,18 @@
         return corners;
     }
 
-    // ---- Can this player act? ----
+    // ---- Turn logic ----
 
     function isMyTurn() {
         if (!gameState) return false;
         if (gameState.status !== 'active') return false;
         if (gameState.game_mode === 'local') return true;
-        // Link mode
         return gameState.player_number === gameState.current_turn;
     }
 
-    function getPlayerLabel() {
-        if (!gameState) return '';
-        if (gameState.game_mode === 'local') return `Player ${gameState.current_turn}`;
-        if (gameState.player_number === null) return 'Spectator';
-        return `You (P${gameState.player_number})`;
+    function remainingStacks() {
+        if (!gameState) return 0;
+        return gameState.offered_stacks.filter(s => s !== null).length;
     }
 
     // ---- Rendering ----
@@ -175,29 +168,15 @@
             g.dataset.hex = key;
 
             if (stack.length > 0) g.classList.add('has-tiles');
+            if (gameState.last_move && gameState.last_move.hex === key) g.classList.add('last-move');
+            if (highlightHex === key) g.classList.add('just-placed');
+            if (selectedStack !== null && stack.length === 0 && isMyTurn()) g.classList.add('valid-target');
 
-            // Last move highlight
-            if (gameState.last_move && gameState.last_move.hex === key) {
-                g.classList.add('last-move');
-            }
-
-            // Placement highlight (animation)
-            if (highlightHex === key) {
-                g.classList.add('just-placed');
-            }
-
-            // Valid target
-            if (selectedStack !== null && stack.length === 0 && isMyTurn()) {
-                g.classList.add('valid-target');
-            }
-
-            // Hex polygon
             const corners = hexCorners(cx, cy, HEX_SIZE - 2);
             const poly = document.createElementNS(SVG_NS, 'polygon');
             poly.setAttribute('points', corners.map(c => `${c.x},${c.y}`).join(' '));
             g.appendChild(poly);
 
-            // Tile stack dots
             if (stack.length > 0) {
                 const maxShow = Math.min(stack.length, 8);
                 const dotR = 6;
@@ -239,6 +218,7 @@
     function renderPicker() {
         const container = document.getElementById('pickerStacks');
         const area = document.getElementById('pickerArea');
+        const label = document.getElementById('pickerLabel');
         container.innerHTML = '';
 
         if (!gameState || gameState.status !== 'active' || !isMyTurn()) {
@@ -248,26 +228,38 @@
 
         area.classList.remove('hidden');
         const colours = gameState.colours;
+        const remaining = remainingStacks();
+        label.textContent = `Place your stacks (${remaining} left)`;
 
         gameState.offered_stacks.forEach((stack, idx) => {
             const div = document.createElement('div');
             div.classList.add('stack-option');
-            if (selectedStack === idx) div.classList.add('selected');
 
-            // Render tiles top-to-bottom (last array element = top, shown first)
-            for (let i = stack.length - 1; i >= 0; i--) {
-                const tile = document.createElement('div');
-                tile.classList.add('stack-tile');
-                tile.style.backgroundColor = colours[stack[i]];
-                div.appendChild(tile);
+            if (stack === null) {
+                // Already placed
+                div.classList.add('placed');
+                const check = document.createElement('div');
+                check.classList.add('stack-check');
+                check.textContent = '✓';
+                div.appendChild(check);
+            } else {
+                if (selectedStack === idx) div.classList.add('selected');
+
+                // Render tiles top-to-bottom
+                for (let i = stack.length - 1; i >= 0; i--) {
+                    const tile = document.createElement('div');
+                    tile.classList.add('stack-tile');
+                    tile.style.backgroundColor = colours[stack[i]];
+                    div.appendChild(tile);
+                }
+
+                div.addEventListener('click', () => {
+                    if (isAnimating) return;
+                    selectedStack = idx;
+                    renderPicker();
+                    renderBoard();
+                });
             }
-
-            div.addEventListener('click', () => {
-                if (isAnimating) return;
-                selectedStack = idx;
-                renderPicker();
-                renderBoard();
-            });
 
             container.appendChild(div);
         });
@@ -286,7 +278,6 @@
         p1Block.classList.toggle('active', gameState.current_turn === 1);
         p2Block.classList.toggle('active', gameState.current_turn === 2);
 
-        // Highlight your score in link mode
         if (gameState.game_mode === 'link' && gameState.player_number) {
             const myBlock = gameState.player_number === 1 ? p1Block : p2Block;
             myBlock.querySelector('.score-label').textContent =
@@ -303,10 +294,7 @@
 
     function renderStatus() {
         const el = document.getElementById('statusText');
-        if (!gameState) {
-            el.textContent = 'Loading…';
-            return;
-        }
+        if (!gameState) { el.textContent = 'Loading…'; return; }
 
         if (gameState.status === 'finished') {
             el.textContent = 'Game over!';
@@ -326,16 +314,17 @@
                 el.textContent = 'Tap an empty hex to place';
                 el.className = 'status-text your-turn';
             } else {
-                el.textContent = 'Your turn — pick a stack';
+                const r = remainingStacks();
+                el.textContent = `Your turn — ${r} stack${r !== 1 ? 's' : ''} to place`;
                 el.className = 'status-text your-turn';
             }
         } else {
-            // Local mode
             if (selectedStack !== null) {
                 el.textContent = `P${gameState.current_turn}: tap an empty hex`;
                 el.className = 'status-text your-turn';
             } else {
-                el.textContent = `Player ${gameState.current_turn}'s turn`;
+                const r = remainingStacks();
+                el.textContent = `Player ${gameState.current_turn} — ${r} stack${r !== 1 ? 's' : ''} to place`;
                 el.className = 'status-text your-turn';
             }
         }
@@ -378,13 +367,12 @@
 
     // ---- Animations ----
 
-    function showPointsPopup(points, hexKey) {
+    function showPointsPopup(points) {
         if (points <= 0) return;
         const popup = document.getElementById('pointsPopup');
         popup.textContent = `+${points}`;
         popup.classList.remove('hidden');
         popup.classList.add('show');
-
         setTimeout(() => {
             popup.classList.remove('show');
             popup.classList.add('hidden');
@@ -396,21 +384,18 @@
         const colours = gameState.colours;
         const svg = document.getElementById('boardSvg');
 
-        // 1. Flash the placed hex
+        // 1. Flash placed hex
         const placedHex = data.last_move.hex;
         renderBoard(placedHex);
-
         await sleep(300);
 
         // 2. Animate merges
         const mergeEvents = data.merge_events || [];
         for (const evt of mergeEvents) {
-            // Brief flash on the merge source and target
             const fromPos = hexPositions[evt.from];
             const toPos = hexPositions[evt.to];
 
             if (fromPos && toPos) {
-                // Draw a moving dot from source to target
                 const dot = document.createElementNS(SVG_NS, 'circle');
                 dot.setAttribute('cx', fromPos.cx);
                 dot.setAttribute('cy', fromPos.cy);
@@ -419,13 +404,6 @@
                 dot.setAttribute('opacity', '0.8');
                 svg.appendChild(dot);
 
-                // Animate
-                const anim = dot.animate([
-                    { cx: fromPos.cx, cy: fromPos.cy },
-                    { cx: toPos.cx, cy: toPos.cy },
-                ], { duration: 250, easing: 'ease-in-out' });
-
-                // Use transform for cross-browser SVG animation
                 const dx = toPos.cx - fromPos.cx;
                 const dy = toPos.cy - fromPos.cy;
                 dot.animate([
@@ -437,7 +415,6 @@
                 dot.remove();
             }
 
-            // Update board state incrementally and re-render
             gameState.board = data.board;
             renderBoard();
             await sleep(150);
@@ -451,21 +428,19 @@
 
             for (const evt of clearEvents) {
                 const hexEl = svg.querySelector(`[data-hex="${evt.hex}"]`);
-                if (hexEl) {
-                    hexEl.classList.add('clearing');
-                }
+                if (hexEl) hexEl.classList.add('clearing');
             }
             await sleep(400);
-
-            showPointsPopup(data.points_scored, clearEvents[0]?.hex);
+            showPointsPopup(data.points_scored);
         }
 
-        // 4. Final state
+        // 4. Update state
         gameState.board = data.board;
         gameState.current_turn = data.current_turn;
         gameState.player1_score = data.player1_score;
         gameState.player2_score = data.player2_score;
         gameState.offered_stacks = data.offered_stacks;
+        gameState.placed_this_turn = data.placed_this_turn;
         gameState.status = data.status;
         gameState.last_move = data.last_move;
 
@@ -514,7 +489,6 @@
                 return;
             }
 
-            // Animate the result
             await animateMoveResult(data);
 
         } catch (e) {
@@ -523,7 +497,7 @@
         }
     }
 
-    // ---- Polling for opponent's turn (link mode) ----
+    // ---- Polling ----
 
     let pollInterval = null;
 
@@ -531,26 +505,25 @@
         if (pollInterval) return;
         pollInterval = setInterval(async () => {
             if (!gameState || gameState.game_mode !== 'link') return;
-            if (isMyTurn()) return; // don't poll when it's our turn
+            if (isMyTurn()) return;
             if (gameState.status !== 'active') return;
 
             try {
                 const res = await fetch(`/api/game/${GAME_ID}`);
                 const data = await res.json();
 
-                // Check if turn changed
-                if (data.current_turn !== gameState.current_turn || data.status !== gameState.status) {
+                if (data.current_turn !== gameState.current_turn ||
+                    data.status !== gameState.status ||
+                    data.placed_this_turn !== gameState.placed_this_turn) {
                     gameState = data;
                     selectedStack = null;
                     renderAll();
                 }
-            } catch (e) {
-                // Silently retry
-            }
+            } catch (e) {}
         }, 3000);
     }
 
-    // ---- Share link ----
+    // ---- Share ----
 
     function copyLink() {
         const url = window.location.href;
