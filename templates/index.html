@@ -85,6 +85,12 @@
                     body: JSON.stringify({ board_size: selectedSize, game_mode: selectedMode })
                 });
                 const data = await res.json();
+                if (data.error) {
+                    alert(data.error);
+                    btn.textContent = 'Start a game';
+                    btn.disabled = false;
+                    return;
+                }
                 window.location.href = data.url;
             } catch (e) {
                 btn.textContent = 'Start a game';

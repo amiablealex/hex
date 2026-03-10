@@ -14,7 +14,13 @@
                 <div class="score-value" id="p1Value">0</div>
             </div>
             <div class="turn-indicator">
-                <div class="turn-dot" id="turnDot"></div>
+                <button class="menu-btn" id="menuBtn" onclick="toggleMenu()" aria-label="Menu">
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+                        <line x1="4" y1="6" x2="16" y2="6"/>
+                        <line x1="4" y1="10" x2="16" y2="10"/>
+                        <line x1="4" y1="14" x2="16" y2="14"/>
+                    </svg>
+                </button>
                 <div class="turn-text" id="turnText">—</div>
             </div>
             <div class="score-block" id="p2Score">
@@ -52,6 +58,32 @@
         </div>
     </div>
 
+    <!-- Menu overlay -->
+    <div class="menu-overlay hidden" id="menuOverlay" onclick="closeMenu()">
+        <div class="menu-card" onclick="event.stopPropagation()">
+            <h3>Menu</h3>
+            <button class="btn" onclick="copyLink(); closeMenu();">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="8" height="8" rx="1.5"/><path d="M3 11V3.5A1.5 1.5 0 0 1 4.5 2H11"/></svg>
+                Copy game link
+            </button>
+            <button class="btn" onclick="window.location.href='/'">New game</button>
+            <button class="btn btn-danger" id="abandonBtn" onclick="confirmAbandon()">Abandon game</button>
+            <button class="btn mt-8" onclick="closeMenu()">Close</button>
+        </div>
+    </div>
+
+    <!-- Confirm dialog -->
+    <div class="confirm-overlay hidden" id="confirmOverlay">
+        <div class="confirm-card">
+            <p id="confirmText">Are you sure?</p>
+            <div class="confirm-actions">
+                <button class="btn" onclick="closeConfirm()">Cancel</button>
+                <button class="btn btn-danger" id="confirmAction">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Game over overlay -->
     <div class="game-over hidden" id="gameOver">
         <div class="game-over-card fade-in">
             <h2 id="gameOverTitle">Game Over</h2>
@@ -66,11 +98,16 @@
                 </div>
             </div>
             <a href="/" class="btn btn-primary">New game</a>
-            <button class="btn mt-8" onclick="document.getElementById('gameOver').classList.add('hidden')">
-                View board
-            </button>
+            <button class="btn mt-8" onclick="viewBoard()">View board</button>
         </div>
     </div>
+
+    <!-- Floating button to return to scoreboard (visible when viewing board after game over) -->
+    <button class="fab hidden" id="fabScoreboard" onclick="showScoreboard()">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+            <path d="M6 4h8M4 8h12M6 12h8M8 16h4"/>
+        </svg>
+    </button>
 
     <div class="points-popup hidden" id="pointsPopup">+0</div>
 
@@ -83,6 +120,55 @@
     let selectedStack = null;
     let isAnimating = false;
     let hexPositions = {};
+
+    // ---- Menu ----
+
+    function toggleMenu() {
+        document.getElementById('menuOverlay').classList.toggle('hidden');
+        // Hide abandon button if game is already over
+        if (gameState && gameState.status !== 'active') {
+            document.getElementById('abandonBtn').classList.add('hidden');
+        } else {
+            document.getElementById('abandonBtn').classList.remove('hidden');
+        }
+    }
+
+    function closeMenu() {
+        document.getElementById('menuOverlay').classList.add('hidden');
+    }
+
+    function confirmAbandon() {
+        closeMenu();
+        const overlay = document.getElementById('confirmOverlay');
+        document.getElementById('confirmText').textContent =
+            'Abandon this game? This can\'t be undone.';
+        document.getElementById('confirmAction').onclick = abandonGame;
+        overlay.classList.remove('hidden');
+    }
+
+    function closeConfirm() {
+        document.getElementById('confirmOverlay').classList.add('hidden');
+    }
+
+    async function abandonGame() {
+        closeConfirm();
+        try {
+            await fetch(`/api/game/${GAME_ID}/abandon`, { method: 'POST' });
+            window.location.href = '/';
+        } catch (e) {
+            window.location.href = '/';
+        }
+    }
+
+    function viewBoard() {
+        document.getElementById('gameOver').classList.add('hidden');
+        document.getElementById('fabScoreboard').classList.remove('hidden');
+    }
+
+    function showScoreboard() {
+        document.getElementById('fabScoreboard').classList.add('hidden');
+        document.getElementById('gameOver').classList.remove('hidden');
+    }
 
     // ---- Hex geometry ----
 
@@ -184,20 +270,7 @@
                 const megaSlabW = 32;
                 const spacing = 3;
 
-                // The mega-slab groups consecutive same-colour layers from the
-                // BOTTOM of the topmost colour run, not blindly the bottom 5.
-                // 
-                // Example: [red, yellow, yellow, yellow, yellow, yellow, yellow]
-                //   Top colour run = 6 yellows (indices 1-6)
-                //   Mega groups the bottom 5 of that run → mega(5 yellow) + 1 yellow on top
-                //   The red underneath is shown as a normal slab below the mega.
-                //
-                // We scan from the top to find the consecutive same-colour run,
-                // then decide how to visualize it.
-
                 const total = stack.length;
-
-                // Count consecutive same-colour from top
                 const topColour = stack[total - 1];
                 let topRun = 0;
                 for (let i = total - 1; i >= 0; i--) {
@@ -205,35 +278,22 @@
                     else break;
                 }
 
-                // Layers below the top colour run
                 const belowCount = total - topRun;
-
-                // Visual plan for the top run
                 const hasMega = topRun >= 5;
-                const megaCount = hasMega ? 5 : 0;
                 const topIndividuals = hasMega ? topRun - 5 : topRun;
-
-                // Below layers shown as individual slabs (max 4 visible)
                 const belowShow = Math.min(belowCount, 4);
 
-                // Calculate total visual height
                 let totalH = 0;
-                // Below slabs
                 if (belowShow > 0) totalH += belowShow * slabH + (belowShow - 1) * spacing;
-                // Gap between below and mega/top
                 if (belowShow > 0 && (hasMega || topIndividuals > 0 || (!hasMega && topRun > 0))) totalH += spacing;
-                // Mega slab
                 if (hasMega) totalH += megaSlabH;
-                // Gap between mega and top individuals
                 if (hasMega && topIndividuals > 0) totalH += spacing;
-                // Top individual slabs
                 if (!hasMega && topRun > 0) totalH += topRun * slabH + (topRun - 1) * spacing;
                 if (hasMega && topIndividuals > 0) totalH += topIndividuals * slabH + (topIndividuals - 1) * spacing;
 
                 const baseY = cy + totalH / 2;
                 let currentY = baseY;
 
-                // 1. Draw below-run slabs (bottom of stack, different colour)
                 for (let i = 0; i < belowShow; i++) {
                     const colourIdx = stack[belowCount - belowShow + i];
                     currentY -= slabH;
@@ -252,7 +312,6 @@
                 }
                 if (belowShow > 0) currentY -= spacing;
 
-                // 2. Draw mega-slab if top run >= 5
                 if (hasMega) {
                     currentY -= megaSlabH;
                     const rect = document.createElementNS(SVG_NS, 'rect');
@@ -282,11 +341,7 @@
                     if (topIndividuals > 0) currentY -= spacing;
                 }
 
-                // 3. Draw remaining individual slabs of the top colour run
                 const individualsToShow = hasMega ? topIndividuals : topRun;
-                if (!hasMega) {
-                    // No mega — just draw top run as individuals (already handled gap above)
-                }
                 for (let i = 0; i < individualsToShow; i++) {
                     currentY -= slabH;
                     const rect = document.createElementNS(SVG_NS, 'rect');
@@ -303,7 +358,6 @@
                     if (i < individualsToShow - 1) currentY -= spacing;
                 }
 
-                // 4. Badge if there are hidden below-layers
                 if (belowCount > belowShow) {
                     const badge = document.createElementNS(SVG_NS, 'text');
                     badge.setAttribute('x', cx);
@@ -343,7 +397,6 @@
             div.classList.add('stack-option');
 
             if (stack === null) {
-                // Already placed
                 div.classList.add('placed');
                 const check = document.createElement('div');
                 check.classList.add('stack-check');
@@ -351,15 +404,12 @@
                 div.appendChild(check);
             } else {
                 if (selectedStack === idx) div.classList.add('selected');
-
-                // Render tiles top-to-bottom
                 for (let i = stack.length - 1; i >= 0; i--) {
                     const tile = document.createElement('div');
                     tile.classList.add('stack-tile');
                     tile.style.backgroundColor = colours[stack[i]];
                     div.appendChild(tile);
                 }
-
                 div.addEventListener('click', () => {
                     if (isAnimating) return;
                     selectedStack = idx;
@@ -367,18 +417,15 @@
                     renderBoard();
                 });
             }
-
             container.appendChild(div);
         });
     }
 
     function renderScores() {
         if (!gameState) return;
-
         document.getElementById('p1Value').textContent = gameState.player1_score;
         document.getElementById('p2Value').textContent = gameState.player2_score;
-        document.getElementById('targetScore').textContent =
-            `First to ${gameState.target_score} wins`;
+        document.getElementById('targetScore').textContent = `First to ${gameState.target_score} wins`;
 
         const p1Block = document.getElementById('p1Score');
         const p2Block = document.getElementById('p2Score');
@@ -387,13 +434,12 @@
 
         if (gameState.game_mode === 'link' && gameState.player_number) {
             const myBlock = gameState.player_number === 1 ? p1Block : p2Block;
-            myBlock.querySelector('.score-label').textContent =
-                `Player ${gameState.player_number} (you)`;
+            myBlock.querySelector('.score-label').textContent = `Player ${gameState.player_number} (you)`;
         }
 
         const turnText = document.getElementById('turnText');
-        if (gameState.status === 'finished') {
-            turnText.textContent = 'Done';
+        if (gameState.status === 'finished' || gameState.status === 'abandoned') {
+            turnText.textContent = gameState.status === 'abandoned' ? 'Abandoned' : 'Done';
         } else {
             turnText.textContent = `P${gameState.current_turn}'s turn`;
         }
@@ -402,6 +448,12 @@
     function renderStatus() {
         const el = document.getElementById('statusText');
         if (!gameState) { el.textContent = 'Loading…'; return; }
+
+        if (gameState.status === 'abandoned') {
+            el.textContent = 'This game was abandoned';
+            el.className = 'status-text waiting';
+            return;
+        }
 
         if (gameState.status === 'finished') {
             el.textContent = 'Game over!';
@@ -450,11 +502,14 @@
     function showGameOver() {
         const overlay = document.getElementById('gameOver');
         overlay.classList.remove('hidden');
+        document.getElementById('fabScoreboard').classList.add('hidden');
         document.getElementById('finalP1').textContent = gameState.player1_score;
         document.getElementById('finalP2').textContent = gameState.player2_score;
 
         const title = document.getElementById('gameOverTitle');
-        if (gameState.player1_score > gameState.player2_score) {
+        if (gameState.status === 'abandoned') {
+            title.textContent = 'Game Abandoned';
+        } else if (gameState.player1_score > gameState.player2_score) {
             title.textContent = 'Player 1 wins!';
         } else if (gameState.player2_score > gameState.player1_score) {
             title.textContent = 'Player 2 wins!';
@@ -480,7 +535,6 @@
             const angle = (Math.PI * 2 * i) / count + (Math.random() - 0.5) * 0.4;
             const dist = 20 + Math.random() * 25;
             const size = 3 + Math.random() * 4;
-
             const circle = document.createElementNS(SVG_NS, 'circle');
             circle.setAttribute('cx', cx);
             circle.setAttribute('cy', cy);
@@ -488,15 +542,12 @@
             circle.setAttribute('fill', colour);
             circle.setAttribute('opacity', '0.9');
             svg.appendChild(circle);
-
             const dx = Math.cos(angle) * dist;
             const dy = Math.sin(angle) * dist;
-
             circle.animate([
                 { transform: 'translate(0, 0) scale(1)', opacity: 0.9 },
                 { transform: `translate(${dx}px, ${dy}px) scale(0.2)`, opacity: 0 },
             ], { duration: 500 + Math.random() * 200, easing: 'ease-out', fill: 'forwards' });
-
             particles.push(circle);
         }
         return particles;
@@ -514,23 +565,19 @@
         text.setAttribute('fill', colour);
         text.textContent = `+${points}`;
         svg.appendChild(text);
-
         text.animate([
             { transform: 'translateY(0)', opacity: 1 },
             { transform: 'translateY(-30px)', opacity: 0 },
         ], { duration: 900, easing: 'ease-out', fill: 'forwards' });
-
         return text;
     }
 
     function bumpScore(player) {
         const el = document.getElementById(player === 1 ? 'p1Value' : 'p2Value');
         el.classList.remove('bump');
-        void el.offsetWidth; // force reflow
+        void el.offsetWidth;
         el.classList.add('bump');
     }
-
-    // ---- Apply a single merge event to a local board copy ----
 
     function applyMergeToBoard(board, evt) {
         const fromStack = board[evt.from] || [];
@@ -552,24 +599,19 @@
         const colours = gameState.colours;
         const svg = document.getElementById('boardSvg');
 
-        // 1. Clear selection immediately so valid-target outlines disappear
         selectedStack = null;
 
-        // 2. Show board after placement (before any merges)
         const animBoard = JSON.parse(JSON.stringify(data.board_after_place));
         gameState.board = animBoard;
         const placedHex = data.last_move.hex;
         renderBoard(placedHex);
         await sleep(350);
 
-        // 2. Animate merges incrementally — each merge modifies the displayed board
         const mergeEvents = data.merge_events || [];
         for (const evt of mergeEvents) {
             const fromPos = hexPositions[evt.from];
             const toPos = hexPositions[evt.to];
-
             if (fromPos && toPos) {
-                // Draw sliding slab overlay
                 const slab = document.createElementNS(SVG_NS, 'rect');
                 slab.setAttribute('x', fromPos.cx - 14);
                 slab.setAttribute('y', fromPos.cy - 4);
@@ -579,64 +621,42 @@
                 slab.setAttribute('fill', colours[evt.colour]);
                 slab.setAttribute('opacity', '0.85');
                 svg.appendChild(slab);
-
                 const dx = toPos.cx - fromPos.cx;
                 const dy = toPos.cy - fromPos.cy;
                 slab.animate([
                     { transform: 'translate(0, 0)', opacity: 0.85 },
                     { transform: `translate(${dx}px, ${dy}px)`, opacity: 0.5 },
                 ], { duration: 280, easing: 'ease-in-out', fill: 'forwards' });
-
                 await sleep(280);
                 slab.remove();
             }
-
-            // Apply this single merge to our local board and re-render
             applyMergeToBoard(gameState.board, evt);
             renderBoard();
             await sleep(100);
         }
 
-        // 3. Animate clears with particle burst
         const clearEvents = data.clear_events || [];
         if (clearEvents.length > 0) {
-            // Board should now match board_after_merges — render it
             renderBoard();
-
             const allParticles = [];
             const allTexts = [];
-
             for (const evt of clearEvents) {
                 const pos = hexPositions[evt.hex];
                 if (pos) {
                     const colour = colours[evt.colour];
-                    const particles = spawnParticles(svg, pos.cx, pos.cy, colour, 12);
-                    allParticles.push(...particles);
-                    const pointText = showPointsAtHex(svg, pos.cx, pos.cy, evt.count, colour);
-                    allTexts.push(pointText);
+                    allParticles.push(...spawnParticles(svg, pos.cx, pos.cy, colour, 12));
+                    allTexts.push(showPointsAtHex(svg, pos.cx, pos.cy, evt.count, colour));
                 }
-
-                // Apply clear to local board
                 applyClearToBoard(gameState.board, evt);
             }
-
-            if (data.points_scored > 0) {
-                bumpScore(data.last_move.player);
-            }
-
+            if (data.points_scored > 0) bumpScore(data.last_move.player);
             await sleep(600);
-
-            // Re-render after clears to show the cleared board
             renderBoard();
-
             await sleep(300);
-
-            // Clean up overlay elements
             allParticles.forEach(p => { try { p.remove(); } catch(e) {} });
             allTexts.forEach(t => { try { t.remove(); } catch(e) {} });
         }
 
-        // 4. Update state
         gameState.board = data.board;
         gameState.current_turn = data.current_turn;
         gameState.player1_score = data.player1_score;
@@ -662,37 +682,27 @@
         if (!gameState || gameState.status !== 'active') return;
         if (!isMyTurn()) return;
         if (selectedStack === null) return;
-
         const stack = gameState.board[hexKey] || [];
         if (stack.length > 0) return;
-
         makeMove(selectedStack, hexKey);
     }
 
     async function makeMove(stackIndex, targetHex) {
         const statusEl = document.getElementById('statusText');
         statusEl.textContent = 'Placing…';
-
         try {
             const res = await fetch(`/api/game/${GAME_ID}/move`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    stack_index: stackIndex,
-                    target_hex: targetHex,
-                }),
+                body: JSON.stringify({ stack_index: stackIndex, target_hex: targetHex }),
             });
-
             const data = await res.json();
-
             if (data.error) {
                 statusEl.textContent = data.error;
                 statusEl.className = 'status-text waiting';
                 return;
             }
-
             await animateMoveResult(data);
-
         } catch (e) {
             statusEl.textContent = 'Connection error, try again';
             isAnimating = false;
@@ -709,11 +719,9 @@
             if (!gameState || gameState.game_mode !== 'link') return;
             if (isMyTurn()) return;
             if (gameState.status !== 'active') return;
-
             try {
                 const res = await fetch(`/api/game/${GAME_ID}`);
                 const data = await res.json();
-
                 if (data.current_turn !== gameState.current_turn ||
                     data.status !== gameState.status ||
                     data.placed_this_turn !== gameState.placed_this_turn) {

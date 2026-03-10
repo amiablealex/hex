@@ -1,5 +1,5 @@
 /* ============================================================
-   HexaStack — Clean, minimal, warm pastel theme — Phase 3
+   HexaStack — Phase 4 (Production)
    ============================================================ */
 
 :root {
@@ -10,12 +10,14 @@
     --text-faint: #B5AFAB;
     --border: #E8E0D8;
 
-    /* Distinguishable pastel palette — spread across hue wheel */
-    --c0: #E07B5A;  /* coral */
-    --c1: #5AAFB8;  /* teal */
-    --c2: #C482D0;  /* plum */
-    --c3: #D4B84A;  /* honey */
-    --c4: #6B9FDE;  /* cornflower */
+    --c0: #E07B5A;
+    --c1: #5AAFB8;
+    --c2: #C482D0;
+    --c3: #D4B84A;
+    --c4: #6B9FDE;
+
+    --danger: #D4605A;
+    --danger-bg: #FDF0EF;
 
     --hex-empty: #EDE7E0;
     --hex-stroke: #D8D0C8;
@@ -27,6 +29,7 @@
     --radius-lg: 20px;
     --shadow-sm: 0 1px 3px rgba(74, 67, 64, 0.06);
     --shadow-md: 0 4px 12px rgba(74, 67, 64, 0.08);
+    --shadow-lg: 0 8px 24px rgba(74, 67, 64, 0.12);
 
     --font: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
     --font-mono: 'DM Mono', 'SF Mono', monospace;
@@ -82,7 +85,6 @@ html, body {
     font-size: 2rem;
     font-weight: 600;
     letter-spacing: -0.02em;
-    color: var(--text);
 }
 
 .home-logo p {
@@ -109,6 +111,8 @@ html, body {
     text-align: left;
     margin-bottom: 2px;
 }
+
+/* ---- Buttons ---- */
 
 .btn {
     display: flex;
@@ -141,6 +145,16 @@ html, body {
 
 .btn-primary:hover, .btn-primary:active {
     background: #5D5552;
+}
+
+.btn-danger {
+    color: var(--danger);
+    border-color: var(--danger);
+    background: var(--danger-bg);
+}
+
+.btn-danger:hover, .btn-danger:active {
+    background: #F9E0DE;
 }
 
 .size-select {
@@ -223,36 +237,39 @@ html, body {
     100% { transform: scale(1); }
 }
 
-.score-block.active .score-label {
-    color: var(--text-light);
-}
-
-.score-block.active .score-value {
-    color: var(--text);
-}
-
-.score-block:not(.active) .score-value {
-    color: var(--text-faint);
-}
+.score-block.active .score-label { color: var(--text-light); }
+.score-block.active .score-value { color: var(--text); }
+.score-block:not(.active) .score-value { color: var(--text-faint); }
 
 .turn-indicator {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 2px;
-}
-
-.turn-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--text);
+    gap: 4px;
 }
 
 .turn-text {
     font-size: 0.7rem;
     color: var(--text-light);
     font-weight: 500;
+}
+
+.menu-btn {
+    background: none;
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 6px;
+    cursor: pointer;
+    color: var(--text-light);
+    transition: all 0.15s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.menu-btn:active {
+    background: var(--bg-warm);
+    border-color: var(--hex-highlight);
 }
 
 .target-score {
@@ -290,9 +307,7 @@ html, body {
     transition: fill 0.2s ease, stroke 0.2s ease;
 }
 
-.hex-cell.has-tiles polygon {
-    fill: var(--bg);
-}
+.hex-cell.has-tiles polygon { fill: var(--bg); }
 
 .hex-cell.valid-target polygon {
     fill: var(--hex-valid);
@@ -306,7 +321,6 @@ html, body {
     stroke-width: 2;
 }
 
-/* Just-placed animation */
 .hex-cell.just-placed polygon {
     stroke: var(--text);
     stroke-width: 2.5;
@@ -319,7 +333,6 @@ html, body {
     100% { stroke-width: 2.5; }
 }
 
-/* Tile slab styling (SVG rects) */
 .tile-slab {
     transition: all 0.2s ease;
 }
@@ -411,9 +424,7 @@ html, body {
     font-weight: 400;
 }
 
-.status-text.waiting {
-    color: var(--text-faint);
-}
+.status-text.waiting { color: var(--text-faint); }
 
 .status-text.your-turn {
     color: var(--text);
@@ -434,7 +445,6 @@ html, body {
     pointer-events: none;
     opacity: 0;
     z-index: 50;
-    transition: none;
 }
 
 .points-popup.show {
@@ -447,6 +457,83 @@ html, body {
     25% { transform: translate(-50%, -50%) scale(1); }
     65% { opacity: 1; }
     100% { opacity: 0; transform: translate(-50%, -70%) scale(1); }
+}
+
+/* ---- Menu overlay ---- */
+
+.menu-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(74, 67, 64, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+}
+
+.menu-card {
+    background: white;
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 24px;
+    max-width: 280px;
+    width: 90%;
+    box-shadow: var(--shadow-lg);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.menu-card h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    text-align: center;
+    margin-bottom: 4px;
+}
+
+/* ---- Confirm dialog ---- */
+
+.confirm-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(74, 67, 64, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 300;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+}
+
+.confirm-card {
+    background: white;
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 24px;
+    max-width: 280px;
+    width: 90%;
+    box-shadow: var(--shadow-lg);
+    text-align: center;
+}
+
+.confirm-card p {
+    font-size: 0.9rem;
+    color: var(--text);
+    margin-bottom: 16px;
+    line-height: 1.5;
+}
+
+.confirm-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.confirm-actions .btn {
+    flex: 1;
+    padding: 12px 16px;
+    font-size: 0.85rem;
 }
 
 /* ---- Game over ---- */
@@ -493,6 +580,32 @@ html, body {
     margin-top: 8px;
 }
 
+/* ---- FAB (floating action button) ---- */
+
+.fab {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: white;
+    border: 1.5px solid var(--border);
+    box-shadow: var(--shadow-md);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-light);
+    z-index: 90;
+    transition: all 0.15s ease;
+}
+
+.fab:active {
+    background: var(--bg-warm);
+    transform: scale(0.95);
+}
+
 /* ---- Share link ---- */
 
 .share-section {
@@ -520,9 +633,7 @@ html, body {
     text-overflow: ellipsis;
 }
 
-.share-link:active {
-    background: var(--bg-warm);
-}
+.share-link:active { background: var(--bg-warm); }
 
 .share-link .copy-icon {
     flex-shrink: 0;
@@ -538,9 +649,7 @@ html, body {
     margin-top: 4px;
 }
 
-.copied-toast.show {
-    opacity: 1;
-}
+.copied-toast.show { opacity: 1; }
 
 /* ---- Animations ---- */
 
@@ -549,9 +658,7 @@ html, body {
     to { opacity: 1; transform: translateY(0); }
 }
 
-.fade-in {
-    animation: fadeIn 0.3s ease forwards;
-}
+.fade-in { animation: fadeIn 0.3s ease forwards; }
 
 /* ---- Utility ---- */
 

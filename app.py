@@ -1,12 +1,15 @@
-"""HexaStack - Async turn-based hex tile sorting game. Phase 2.5."""
+"""HexaStack - Async turn-based hex tile sorting game. Phase 4 (Production)."""
 
 import copy
 import json
 import os
 import random
+import re
 import secrets
 import sqlite3
-from datetime import datetime, timezone
+import time
+from datetime import datetime, timedelta, timezone
+from functools import wraps
 
 from flask import Flask, g, jsonify, make_response, render_template, request
 
@@ -16,8 +19,13 @@ app.config["DATABASE"] = os.environ.get(
 )
 
 # ---------------------------------------------------------------------------
-# Board geometry
+# Configuration
 # ---------------------------------------------------------------------------
+
+GAME_EXPIRY_DAYS = 7
+MAX_ACTIVE_GAMES_PER_TOKEN = 20
+RATE_LIMIT_WINDOW = 60  # seconds
+RATE_LIMIT_MAX_CREATES = 10  # max game creates per window
 
 BOARD_CONFIGS = {
     "small": {"radius": 1, "hexes": 7, "colours": 3, "target_score": 30},
@@ -28,6 +36,13 @@ BOARD_CONFIGS = {
 COLOUR_PALETTE = ["#E07B5A", "#5AAFB8", "#C482D0", "#D4B84A", "#6B9FDE"]
 COLOUR_NAMES = ["coral", "teal", "plum", "honey", "cornflower"]
 
+# In-memory rate limiter (resets on restart, fine for low-traffic Pi)
+_rate_limits = {}  # token -> [(timestamp, ...)]
+
+
+# ---------------------------------------------------------------------------
+# Board geometry
+# ---------------------------------------------------------------------------
 
 def hex_grid_coords(radius):
     coords = []
@@ -49,10 +64,11 @@ def hex_neighbours(q, r):
 
 def get_db():
     if "db" not in g:
-        g.db = sqlite3.connect(app.config["DATABASE"])
+        g.db = sqlite3.connect(app.config["DATABASE"], timeout=10)
         g.db.row_factory = sqlite3.Row
         g.db.execute("PRAGMA journal_mode=WAL")
         g.db.execute("PRAGMA foreign_keys=ON")
+        g.db.execute("PRAGMA busy_timeout=5000")
     return g.db
 
 
@@ -64,7 +80,7 @@ def close_db(exception):
 
 
 def init_db():
-    db = sqlite3.connect(app.config["DATABASE"])
+    db = sqlite3.connect(app.config["DATABASE"], timeout=10)
     db.execute("PRAGMA journal_mode=WAL")
     db.execute(
         """
@@ -89,8 +105,69 @@ def init_db():
         )
         """
     )
+    # Indices for cleanup and queries
+    db.execute("CREATE INDEX IF NOT EXISTS idx_games_status ON games(status)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_games_updated ON games(updated_at)")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_games_p1token ON games(player1_token)")
     db.commit()
     db.close()
+
+
+def cleanup_expired_games():
+    """Delete games older than GAME_EXPIRY_DAYS. Run on startup."""
+    try:
+        db = sqlite3.connect(app.config["DATABASE"], timeout=10)
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=GAME_EXPIRY_DAYS)).isoformat()
+        result = db.execute("DELETE FROM games WHERE updated_at < ?", (cutoff,))
+        deleted = result.rowcount
+        db.commit()
+        db.close()
+        if deleted > 0:
+            app.logger.info(f"Cleaned up {deleted} expired games")
+    except Exception as e:
+        app.logger.error(f"Cleanup failed: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Rate limiting
+# ---------------------------------------------------------------------------
+
+def check_rate_limit(token, limit=RATE_LIMIT_MAX_CREATES, window=RATE_LIMIT_WINDOW):
+    """Simple in-memory rate limiter. Returns True if allowed."""
+    now = time.time()
+    if token not in _rate_limits:
+        _rate_limits[token] = []
+
+    # Prune old entries
+    _rate_limits[token] = [t for t in _rate_limits[token] if now - t < window]
+
+    if len(_rate_limits[token]) >= limit:
+        return False
+
+    _rate_limits[token].append(now)
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Input validation
+# ---------------------------------------------------------------------------
+
+HEX_COORD_RE = re.compile(r"^-?\d+,-?\d+$")
+
+
+def validate_hex_coord(coord_str):
+    """Validate hex coordinate string format."""
+    return bool(HEX_COORD_RE.match(coord_str))
+
+
+def require_json(f):
+    """Decorator to ensure request has JSON content type."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not request.is_json:
+            return jsonify({"error": "Content-Type must be application/json"}), 415
+        return f(*args, **kwargs)
+    return decorated
 
 
 # ---------------------------------------------------------------------------
@@ -108,7 +185,6 @@ def generate_stacks(game_seed, move_count, num_colours):
 
 
 def _count_top(stack):
-    """Count consecutive same-colour layers from the top."""
     if not stack:
         return 0, -1
     top = stack[-1]
@@ -122,7 +198,6 @@ def _count_top(stack):
 
 
 def _find_all_mergeable_pairs(board, coords_set):
-    """Find all adjacent pairs with matching top colours."""
     pairs = []
     seen = set()
     for coord_str in board:
@@ -131,7 +206,6 @@ def _find_all_mergeable_pairs(board, coords_set):
             continue
         our_count, top_colour = _count_top(stack)
         q, r = map(int, coord_str.split(","))
-
         for nq, nr in hex_neighbours(q, r):
             nkey = f"{nq},{nr}"
             if nkey not in coords_set or nkey not in board or not board[nkey]:
@@ -148,7 +222,6 @@ def _find_all_mergeable_pairs(board, coords_set):
 
 
 def _execute_merge(board, from_key, to_key, count):
-    """Execute a single merge: move top `count` layers from from_key to to_key."""
     from_stack = board[from_key]
     transferred = from_stack[-count:]
     board[from_key] = from_stack[:-count]
@@ -157,7 +230,6 @@ def _execute_merge(board, from_key, to_key, count):
 
 
 def _simulate_merges(board, coords_set):
-    """Run merges to completion on a board copy. Returns (board, total_merges, total_layers_moved)."""
     board = copy.deepcopy(board)
     total_merges = 0
     total_layers = 0
@@ -167,7 +239,6 @@ def _simulate_merges(board, coords_set):
         pairs = _find_all_mergeable_pairs(board, coords_set)
         if not pairs:
             break
-        # Pick first pair, smaller into larger
         coord_a, coord_b, colour, count_a, count_b = pairs[0]
         if count_a <= count_b:
             board = _execute_merge(board, coord_a, coord_b, count_a)
@@ -181,12 +252,6 @@ def _simulate_merges(board, coords_set):
 
 
 def process_merges(board, coords_set):
-    """
-    Smart merge: when multiple merge directions exist, try each and pick
-    the path that produces the most total chain merges (be kind to player).
-
-    Returns (board, merge_events).
-    """
     merge_events = []
     changed = True
     while changed:
@@ -195,7 +260,6 @@ def process_merges(board, coords_set):
         if not pairs:
             break
 
-        # If only one pair, just do it
         if len(pairs) == 1:
             coord_a, coord_b, colour, count_a, count_b = pairs[0]
             if count_a <= count_b:
@@ -203,18 +267,14 @@ def process_merges(board, coords_set):
             else:
                 from_key, to_key, count = coord_b, coord_a, count_b
         else:
-            # Multiple possible merges — simulate each to find best outcome
             best_score = -1
             best_merge = None
-
             for coord_a, coord_b, colour, count_a, count_b in pairs:
-                # Try direction A -> B
                 sim_board = copy.deepcopy(board)
                 sim_board = _execute_merge(sim_board, coord_a, coord_b, count_a)
                 _, merges_ab, layers_ab = _simulate_merges(sim_board, coords_set)
                 score_ab = merges_ab * 100 + layers_ab + count_a
 
-                # Try direction B -> A
                 sim_board = copy.deepcopy(board)
                 sim_board = _execute_merge(sim_board, coord_b, coord_a, count_b)
                 _, merges_ba, layers_ba = _simulate_merges(sim_board, coords_set)
@@ -232,7 +292,7 @@ def process_merges(board, coords_set):
             from_key, to_key, count, colour = best_merge
 
         board = _execute_merge(board, from_key, to_key, count)
-        colour_val = board[to_key][-1]  # colour that was merged
+        colour_val = board[to_key][-1]
         merge_events.append({
             "from": from_key, "to": to_key,
             "colour": colour_val, "count": count,
@@ -306,12 +366,14 @@ def get_player_token():
 
 def ensure_token_cookie(resp):
     if not request.cookies.get("hexastack_player"):
+        is_secure = request.headers.get("X-Forwarded-Proto") == "https"
         resp.set_cookie(
             "hexastack_player",
             secrets.token_urlsafe(16),
             max_age=60 * 60 * 24 * 365,
             httponly=True,
             samesite="Lax",
+            secure=is_secure,
         )
     return resp
 
@@ -326,8 +388,26 @@ def index():
     return ensure_token_cookie(resp)
 
 
+@app.route("/health")
+def health():
+    """Health check endpoint for monitoring."""
+    try:
+        db = get_db()
+        db.execute("SELECT 1").fetchone()
+        return jsonify({"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()})
+    except Exception as e:
+        return jsonify({"status": "error", "detail": str(e)}), 500
+
+
 @app.route("/api/create", methods=["POST"])
+@require_json
 def create_game():
+    token = get_player_token()
+
+    # Rate limit game creation
+    if token and not check_rate_limit(token):
+        return jsonify({"error": "Too many games created. Try again later."}), 429
+
     data = request.get_json() or {}
     board_size = data.get("board_size", "medium")
     game_mode = data.get("game_mode", "link")
@@ -336,6 +416,16 @@ def create_game():
         return jsonify({"error": "Invalid board size"}), 400
     if game_mode not in ("local", "link"):
         return jsonify({"error": "Invalid game mode"}), 400
+
+    # Cap active games per player
+    if token:
+        db = get_db()
+        active_count = db.execute(
+            "SELECT COUNT(*) FROM games WHERE player1_token = ? AND status = 'active'",
+            (token,),
+        ).fetchone()[0]
+        if active_count >= MAX_ACTIVE_GAMES_PER_TOKEN:
+            return jsonify({"error": "Too many active games. Finish or abandon some first."}), 429
 
     config = BOARD_CONFIGS[board_size]
     game_id = secrets.token_urlsafe(8)
@@ -349,9 +439,8 @@ def create_game():
     stacks = generate_stacks(seed, 0, config["colours"])
     now = datetime.now(timezone.utc).isoformat()
 
-    player_token = get_player_token()
-    if not player_token:
-        player_token = secrets.token_urlsafe(16)
+    if not token:
+        token = secrets.token_urlsafe(16)
 
     db = get_db()
     db.execute(
@@ -363,7 +452,7 @@ def create_game():
         (
             game_id, board_size, json.dumps(board), json.dumps(stacks), seed,
             game_mode,
-            player_token if game_mode == "link" else None,
+            token if game_mode == "link" else None,
             now, now,
         ),
     )
@@ -371,15 +460,21 @@ def create_game():
 
     resp = make_response(jsonify({"game_id": game_id, "url": f"/game/{game_id}"}))
     if not request.cookies.get("hexastack_player"):
+        is_secure = request.headers.get("X-Forwarded-Proto") == "https"
         resp.set_cookie(
-            "hexastack_player", player_token,
+            "hexastack_player", token,
             max_age=60 * 60 * 24 * 365, httponly=True, samesite="Lax",
+            secure=is_secure,
         )
     return resp
 
 
 @app.route("/game/<game_id>")
 def game_page(game_id):
+    # Validate game_id format
+    if len(game_id) > 20 or not re.match(r'^[A-Za-z0-9_-]+$', game_id):
+        return render_template("not_found.html"), 404
+
     db = get_db()
     game = db.execute("SELECT * FROM games WHERE id = ?", (game_id,)).fetchone()
     if not game:
@@ -390,6 +485,9 @@ def game_page(game_id):
 
 @app.route("/api/game/<game_id>")
 def get_game(game_id):
+    if len(game_id) > 20:
+        return jsonify({"error": "Game not found"}), 404
+
     db = get_db()
     game = db.execute("SELECT * FROM games WHERE id = ?", (game_id,)).fetchone()
     if not game:
@@ -407,13 +505,15 @@ def get_game(game_id):
                 player_number = 1
             elif game["player2_token"] == token:
                 player_number = 2
-            elif game["player2_token"] is None:
-                player_number = 2
-                db.execute(
-                    "UPDATE games SET player2_token = ? WHERE id = ?",
+            elif game["player2_token"] is None and game["status"] == "active":
+                # Race condition guard: use UPDATE WHERE to atomically claim P2
+                result = db.execute(
+                    "UPDATE games SET player2_token = ? WHERE id = ? AND player2_token IS NULL",
                     (token, game_id),
                 )
                 db.commit()
+                if result.rowcount > 0:
+                    player_number = 2
 
     return jsonify({
         "id": game["id"],
@@ -438,6 +538,7 @@ def get_game(game_id):
 
 
 @app.route("/api/game/<game_id>/move", methods=["POST"])
+@require_json
 def make_move(game_id):
     db = get_db()
     game = db.execute("SELECT * FROM games WHERE id = ?", (game_id,)).fetchone()
@@ -459,8 +560,13 @@ def make_move(game_id):
     stack_index = data.get("stack_index")
     target_hex = data.get("target_hex")
 
+    # Input validation
     if stack_index is None or target_hex is None:
         return jsonify({"error": "Missing stack_index or target_hex"}), 400
+    if not isinstance(stack_index, int) or not isinstance(target_hex, str):
+        return jsonify({"error": "Invalid input types"}), 400
+    if not validate_hex_coord(target_hex):
+        return jsonify({"error": "Invalid hex coordinate format"}), 400
 
     board = json.loads(game["board_state"])
     offered = json.loads(game["offered_stacks"])
@@ -477,22 +583,14 @@ def make_move(game_id):
     if board.get(target_hex) and len(board[target_hex]) > 0:
         return jsonify({"error": "Hex is not empty"}), 400
 
-    # Place the stack
     chosen_stack = offered[stack_index]
     board[target_hex] = list(chosen_stack)
-
-    # Mark stack as used (None = placed)
     offered[stack_index] = None
 
-    # Snapshot board after placement, before merges (for client-side animation)
     board_after_place = copy.deepcopy(board)
 
-    # Process merges then clears, chain if needed
     board, merge_events = process_merges(board, coords_set)
-
-    # Snapshot after first merges, before clears
     board_after_merges = copy.deepcopy(board)
-
     board, points, clear_events = process_clears(board)
 
     if clear_events:
@@ -502,7 +600,6 @@ def make_move(game_id):
         points += extra_points
         clear_events.extend(extra_clears)
 
-    # Update scores
     current_player = game["current_turn"]
     p1_score = game["player1_score"]
     p2_score = game["player2_score"]
@@ -515,11 +612,8 @@ def make_move(game_id):
 
     placed_this_turn = game["placed_this_turn"] + 1
 
-    # Check if all 3 stacks placed or no empty hexes remain
     remaining_stacks = [s for s in offered if s is not None]
-    has_empty_hex = any(
-        not board.get(f"{q},{r}") for q, r in coords
-    )
+    has_empty_hex = any(not board.get(f"{q},{r}") for q, r in coords)
     turn_complete = (placed_this_turn >= 3) or (len(remaining_stacks) == 0) or (not has_empty_hex)
 
     if turn_complete:
@@ -530,10 +624,9 @@ def make_move(game_id):
     else:
         next_turn = current_player
         move_count = game["move_count"]
-        next_stacks = offered  # keep the same stacks with nulls for placed ones
+        next_stacks = offered
         placed_count = placed_this_turn
 
-    # Check game over
     status = "active"
     if check_game_over(board, coords_set, config["target_score"], p1_score, p2_score):
         status = "finished"
@@ -589,12 +682,38 @@ def make_move(game_id):
     })
 
 
+@app.route("/api/game/<game_id>/abandon", methods=["POST"])
+def abandon_game(game_id):
+    """Mark a game as abandoned. Either player can abandon."""
+    db = get_db()
+    game = db.execute("SELECT * FROM games WHERE id = ?", (game_id,)).fetchone()
+    if not game:
+        return jsonify({"error": "Game not found"}), 404
+    if game["status"] != "active":
+        return jsonify({"error": "Game is already over"}), 400
+
+    # In link mode, only participants can abandon
+    if game["game_mode"] == "link":
+        token = get_player_token()
+        if token != game["player1_token"] and token != game["player2_token"]:
+            return jsonify({"error": "Not a participant"}), 403
+
+    now = datetime.now(timezone.utc).isoformat()
+    db.execute(
+        "UPDATE games SET status = 'abandoned', updated_at = ? WHERE id = ?",
+        (now, game_id),
+    )
+    db.commit()
+    return jsonify({"success": True, "status": "abandoned"})
+
+
 # ---------------------------------------------------------------------------
 # Init & run
 # ---------------------------------------------------------------------------
 
 with app.app_context():
     init_db()
+    cleanup_expired_games()
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)
